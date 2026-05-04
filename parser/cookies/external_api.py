@@ -11,8 +11,8 @@ API_URL = "https://spfa.ru/api"
 
 
 class ExternalApiCookiesProvider(CookiesProvider):
-    MAX_STATUS_HISTORY = 10
-    PURCHASE_COOLDOWN = 600  # 10 минут
+    MAX_STATUS_HISTORY = 5
+    PURCHASE_COOLDOWN = 180  # 3 минуты
 
     def __init__(self, api_key: str, storage_path: str | Path = "storage/cookies_external.json"):
         self.api_key = api_key
@@ -22,12 +22,12 @@ class ExternalApiCookiesProvider(CookiesProvider):
         self.last_cookies: dict | None = None
 
         self.unblock_started_at: float | None = None
-        self.UNBLOCK_TIMEOUT = 300  # 5 минут
-        self.PAUSE_FOR_ERROR = 120 # 2 минуты
-        self.NOT_BALANCE = 300 # 5 минуты
-        self.WAIT_FIRST_FOR_UNBLOCK = 5  # 5 сек, пауза для первой разблокировки
-        self.WAIT_FOR_NEW = 3  # 3 сек, пауза после покупки для стабильности
-        self.WAIT_FOR_UNBLOCK = 10 # пауза при долгой разблокировке
+        self.UNBLOCK_TIMEOUT = 90   # 1.5 минуты
+        self.PAUSE_FOR_ERROR = 30   # 30 сек
+        self.NOT_BALANCE = 300      # 5 минут
+        self.WAIT_FIRST_FOR_UNBLOCK = 15  # 15 сек
+        self.WAIT_FOR_NEW = 3       # 3 сек
+        self.WAIT_FOR_UNBLOCK = 10  # 10 сек
 
         self.status_history: list[int] = []  # новые: последние коды
         self.last_purchase_at: float | None = None  # новые: время последней покупки
