@@ -13,6 +13,7 @@ from db_service import SQLiteDBHandler
 from dto import Proxy, AvitoConfig
 from filters.ads_filter import AdsFilter
 from hide_private_data import log_config
+from integrations.kafka_producer import KafkaListingProducer
 from integrations.notifications.factory import build_notifier
 from load_config import load_avito_config
 from models import ItemsResponse, Item
@@ -54,6 +55,7 @@ class AvitoParse:
             block_threshold=config.block_threshold
         )
         self.ads_filter = AdsFilter(config=config, is_viewed_fn=self.is_viewed)
+        self.kafka_producer = KafkaListingProducer()
         log_config(config=self.config, version=VERSION)
 
 
@@ -169,6 +171,7 @@ class AvitoParse:
 
                 filter_ads = self.filter_ads(ads=ads)
 
+                self._publish_to_kafka(filter_ads)
                 self.notifier.notify_many(ads=filter_ads)
 
                 # Просмотры
@@ -195,6 +198,10 @@ class AvitoParse:
         if self.config.one_time_start:
             self.notifier.notify(message="Парсинг Авито завершён. Все ссылки обработаны")
             self.stop_event = True
+
+    def _publish_to_kafka(self, ads: list[Item]) -> None:
+        for ad in ads:
+            self.kafka_producer.publish(ad)
 
     @staticmethod
     def _clean_null_ads(ads: list[Item]) -> list[Item]:

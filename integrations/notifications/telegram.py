@@ -33,7 +33,7 @@ class TelegramNotifier(Notifier):
                     "parse_mode": "MarkdownV2",
                 },
                 proxies=self.proxy,
-                timeout=10,
+                timeout=30,
             )
 
         send_with_retries(_send)
@@ -49,7 +49,7 @@ class TelegramNotifier(Notifier):
                     "disable_web_page_preview": True,
                 },
                 proxies=self.proxy,
-                timeout=10,
+                timeout=30,
             )
 
         send_with_retries(_send)
@@ -97,7 +97,7 @@ class TelegramNotifier(Notifier):
                         "disable_web_page_preview": True,
                     },
                     proxies=self.proxy,
-                    timeout=10,
+                    timeout=30,
                 )
 
             return requests.post(
@@ -110,7 +110,7 @@ class TelegramNotifier(Notifier):
                     "disable_web_page_preview": True,
                 },
                 proxies=self.proxy,
-                timeout=10,
+                timeout=30,
             )
 
         try:
