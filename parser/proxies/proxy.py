@@ -41,10 +41,12 @@ class MobileProxy(Proxy):
         return f"http://{self.url}"
 
     def handle_block(self):
-        # делаем запрос на смену IP
-        params = {
-            "format": "json"
-        }
-        res = requests.get(self.change_ip_url, params=params, timeout=10)
-        if res.status_code == 200:
-            logger.success(f"новый IP {res.json().get('new_ip')}")
+        params = {"format": "json"}
+        try:
+            res = requests.get(self.change_ip_url, params=params, timeout=10)
+            if res.status_code == 200:
+                logger.success(f"новый IP {res.json().get('new_ip')}")
+            else:
+                logger.warning(f"Смена IP: неожиданный статус {res.status_code}")
+        except requests.RequestException as e:
+            logger.warning(f"Смена IP недоступна, продолжаем с текущим: {e}")
