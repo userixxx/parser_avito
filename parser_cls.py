@@ -163,7 +163,7 @@ class AvitoParse:
 
                 if self.config.log_ads:
                     for ad in ads:
-                        address = ad.addressDetailed.formattedAddress if ad.addressDetailed else "—"
+                        address = ad.addressDetailed.locationName if ad.addressDetailed else "—"
                         price = ad.priceDetailed.string if ad.priceDetailed else "—"
                         logger.info(f"  [{ad.id}] {ad.title} | {address} | {price} | avito.ru{ad.urlPath}")
 
