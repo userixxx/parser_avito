@@ -55,4 +55,5 @@ class AvitoConfig:
     retry_delay: int = 5
     timeout: int = 20
     block_threshold: int = 3
+    log_ads: bool = False
 

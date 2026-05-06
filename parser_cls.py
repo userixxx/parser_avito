@@ -161,6 +161,12 @@ class AvitoParse:
 
                 logger.info(f"Объявлений перед чисткой {len(ads)}")
 
+                if self.config.log_ads:
+                    for ad in ads:
+                        address = ad.addressDetailed.formattedAddress if ad.addressDetailed else "—"
+                        price = ad.priceDetailed.string if ad.priceDetailed else "—"
+                        logger.info(f"  [{ad.id}] {ad.title} | {address} | {price} | avito.ru{ad.urlPath}")
+
                 ads = self._add_seller_to_ads(ads=ads)
 
                 ads = self._add_promotion_to_ads(ads=ads)
