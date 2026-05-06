@@ -135,7 +135,7 @@ class AvitoParse:
                 if not html_code:
                     logger.warning(
                         f"Не удалось получить HTML для {url}, пробую заново через {self.config.pause_between_links} сек.")
-                    time.sleep(self.config.pause_between_links)
+                    time.sleep(random.uniform(1, 7))
                     continue
 
                 data_from_page = self.find_json_on_page(html_code=html_code)
@@ -191,7 +191,7 @@ class AvitoParse:
                     ads_in_link.extend(filter_ads)
 
                 logger.info(f"Пауза {self.config.pause_between_links} сек.")
-                time.sleep(self.config.pause_between_links)
+                time.sleep(random.uniform(1, 7))
 
             if ads_in_link:
                 logger.info(f"Сохраняю {len(ads_in_link)} объявлений")
