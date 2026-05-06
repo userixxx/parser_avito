@@ -1,2 +1,4 @@
 # created by virtualenv automatically
 .secret.txt
+.idea/
+__pycache__/
