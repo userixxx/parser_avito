@@ -32,8 +32,9 @@ class KafkaListingProducer:
         if not ad.coords or 'lat' not in ad.coords or 'lng' not in ad.coords:
             return False
 
+        clean_path = ad.urlPath.split('?')[0]
         message = {
-            'avito_url': f'https://www.avito.ru{ad.urlPath}',
+            'avito_url': f'https://www.avito.ru{clean_path}',
             'address': (
                 ad.coords.get('address_user')
                 or (ad.geo.formattedAddress if ad.geo else '')

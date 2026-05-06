@@ -12,7 +12,7 @@ class SQLiteDBHandler:
             cls._instance = super(SQLiteDBHandler, cls).__new__(cls)
         return cls._instance
 
-    def __init__(self, db_name="database.db"):
+    def __init__(self, db_name="storage/database.db"):
         if not hasattr(self, "_initialized"):
             self.db_name = db_name
             self._create_table()
