@@ -42,6 +42,11 @@ class KafkaListingProducer:
             ),
             'lat': float(ad.coords['lat']),
             'lon': float(ad.coords['lng']),
+            'title':        ad.title,
+            'description':  ad.description,
+            'published_at': ad.sortTimeStamp,
+            'seller_id':    ad.sellerId,
+            'is_promotion': ad.isPromotion,
         }
         if ad.priceDetailed and ad.priceDetailed.value:
             message['price'] = ad.priceDetailed.value
