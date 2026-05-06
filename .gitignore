@@ -2,3 +2,4 @@
 .secret.txt
 .idea/
 __pycache__/
+config.toml
