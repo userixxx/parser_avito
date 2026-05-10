@@ -17,6 +17,22 @@ def _extract_area(title: str | None) -> float | None:
     return float(match.group(1).replace(',', '.'))
 
 
+def _extract_total_price(pd) -> int | None:
+    if not pd or not pd.value:
+        return None
+
+    if 'за м²' not in (pd.postfix or ''):
+        return pd.value
+
+    exponent = pd.exponent or ''
+    match = re.match(r'([\d]+(?:[.,][\d]+)?)\s*(тыс|млн)', exponent.strip())
+    if not match:
+        return None
+    num = float(match.group(1).replace(',', '.'))
+    multiplier = 1_000 if 'тыс' in match.group(2) else 1_000_000
+    return round(num * multiplier)
+
+
 class KafkaListingProducer:
     def __init__(self):
         self._bootstrap = os.environ.get('KAFKA_BOOTSTRAP_SERVERS', '')
@@ -58,8 +74,10 @@ class KafkaListingProducer:
             'seller_id':    ad.sellerId,
             'is_promotion': ad.isPromotion,
         }
-        if ad.priceDetailed and ad.priceDetailed.value:
-            message['price'] = ad.priceDetailed.value
+
+        price = _extract_total_price(ad.priceDetailed)
+        if price is not None:
+            message['price'] = price
 
         area = _extract_area(ad.title)
         if area is not None:
