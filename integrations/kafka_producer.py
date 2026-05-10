@@ -1,10 +1,20 @@
 import json
 import os
+import re
 
 from kafka import KafkaProducer
 from loguru import logger
 
 from models import Item
+
+
+def _extract_area(title: str | None) -> float | None:
+    if not title:
+        return None
+    match = re.search(r'(\d+[.,]?\d*)\s*м[²2]', title)
+    if not match:
+        return None
+    return float(match.group(1).replace(',', '.'))
 
 
 class KafkaListingProducer:
@@ -50,6 +60,10 @@ class KafkaListingProducer:
         }
         if ad.priceDetailed and ad.priceDetailed.value:
             message['price'] = ad.priceDetailed.value
+
+        area = _extract_area(ad.title)
+        if area is not None:
+            message['area'] = area
 
         try:
             self._get_producer().send(
