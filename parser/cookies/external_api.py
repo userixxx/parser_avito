@@ -11,8 +11,8 @@ API_URL = "https://spfa.ru/api"
 
 
 class ExternalApiCookiesProvider(CookiesProvider):
-    MAX_STATUS_HISTORY = 5
-    PURCHASE_COOLDOWN = 180  # 3 минуты
+    MAX_STATUS_HISTORY = 10
+    PURCHASE_COOLDOWN = 600  # 10 минут
 
     def __init__(self, api_key: str, storage_path: str | Path = "storage/cookies_external.json"):
         self.api_key = api_key
