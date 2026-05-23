@@ -24,13 +24,16 @@ RUN apt-get update && apt-get install \
 	&& apt-get clean \
 	&& apt-get distclean
 
-COPY requirements.txt /app/requirements.txt
 WORKDIR /app
-RUN pip install --upgrade pip && pip install -r requirements.txt
+
+COPY parser_avito/requirements.txt /app/requirements.txt
+COPY core/shared/python/pvz_common/requirements.txt /app/shared_requirements.txt
+RUN pip install --upgrade pip && pip install -r /app/shared_requirements.txt -r /app/requirements.txt
 
 RUN python -m playwright install chromium-headless-shell
 
-COPY . /app
-COPY entrypoint.sh /
+COPY core/shared/python/pvz_common /app/pvz_common
+COPY parser_avito /app
+COPY parser_avito/entrypoint.sh /entrypoint.sh
 
 ENTRYPOINT ["/bin/bash", "/entrypoint.sh"]

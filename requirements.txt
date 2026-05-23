@@ -1,6 +1,5 @@
 beautifulsoup4==4.13.4
 curl_cffi
-loguru==0.7.0
 openpyxl==3.1.5
 playwright==1.52.0
 playwright-stealth==2.0.0
@@ -14,5 +13,4 @@ tomli_w==1.2.0
 tzdata==2025.2
 tzlocal==5.3.1
 flet==0.24.1
-httpx
 kafka-python>=2.0.0
