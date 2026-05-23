@@ -361,11 +361,17 @@ def _resolve_runtime_config(base: AvitoConfig, rc: Optional[RemoteConfig]) -> Op
     if not snapshot.enabled:
         return None
 
-    if not snapshot.search_url:
-        return base
-
     runtime = copy.copy(base)
-    runtime.urls = [snapshot.search_url]
+
+    if snapshot.search_url:
+        runtime.urls = [snapshot.search_url]
+
+    if snapshot.proxy_string:
+        runtime.proxy_string = snapshot.proxy_string
+
+    if snapshot.proxy_change_url:
+        runtime.proxy_change_url = snapshot.proxy_change_url
+
     return runtime
 
 
