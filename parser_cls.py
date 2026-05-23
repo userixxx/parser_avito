@@ -1,8 +1,11 @@
+import asyncio
+import copy
 import json
 import random
 import re
 import time
 from datetime import datetime, timedelta
+from typing import Optional
 
 from bs4 import BeautifulSoup
 from loguru import logger
@@ -21,6 +24,8 @@ from parser.cookies.factory import build_cookies_provider
 from parser.export.factory import build_result_storage
 from parser.http.client import HttpClient
 from parser.proxies.proxy_factory import build_proxy
+from pvz_common.config_boot import load_boot_config, BootConfigError
+from pvz_common.remote_config import RemoteConfig, RemoteConfigError
 from utils.build_api_params import build_api_params
 from utils.parse_phone import ParsePhone
 from version import VERSION
@@ -322,6 +327,48 @@ class AvitoParse:
             logger.info(f"При сохранении в БД ошибка {err}")
 
 
+def _build_remote_config() -> Optional[RemoteConfig]:
+    try:
+        boot = load_boot_config("avito")
+    except BootConfigError as err:
+        logger.warning(f"RemoteConfig boot failed, using static config only: {err}")
+        return None
+
+    rc = RemoteConfig(
+        source=boot.source,
+        city=boot.city,
+        api_url=boot.api_url,
+        token=boot.token,
+    )
+    try:
+        asyncio.run(rc.get())
+        logger.info(f"RemoteConfig initialized for source=avito city={boot.city}")
+        return rc
+    except Exception as err:
+        logger.error(f"RemoteConfig initial fetch failed, using static config only: {err}")
+        return None
+
+
+def _resolve_runtime_config(base: AvitoConfig, rc: Optional[RemoteConfig]) -> Optional[AvitoConfig]:
+    if rc is None:
+        return base
+    try:
+        snapshot = asyncio.run(rc.get())
+    except RemoteConfigError as err:
+        logger.warning(f"RemoteConfig unavailable, using static config: {err}")
+        return base
+
+    if not snapshot.enabled:
+        return None
+
+    if not snapshot.search_url:
+        return base
+
+    runtime = copy.copy(base)
+    runtime.urls = [snapshot.search_url]
+    return runtime
+
+
 if __name__ == "__main__":
     try:
         config = load_avito_config("config.toml")
@@ -329,15 +376,23 @@ if __name__ == "__main__":
         logger.error(f"Ошибка загрузки конфига: {err}")
         exit(1)
 
+    remote_config_client = _build_remote_config()
+
     while True:
         try:
-            parser = AvitoParse(config)
+            runtime_config = _resolve_runtime_config(config, remote_config_client)
+            if runtime_config is None:
+                logger.info("Парсер выключен через админку, пауза 60 сек")
+                time.sleep(60)
+                continue
+
+            parser = AvitoParse(runtime_config)
             parser.parse()
-            if config.one_time_start:
+            if runtime_config.one_time_start:
                 logger.info("Парсинг завершен т.к. включён one_time_start в настройках")
                 break
-            logger.info(f"Парсинг завершен. Пауза {config.pause_general} сек")
-            time.sleep(config.pause_general)
+            logger.info(f"Парсинг завершен. Пауза {runtime_config.pause_general} сек")
+            time.sleep(runtime_config.pause_general)
         except Exception as err:
             logger.exception(err)
             logger.error(f"Произошла ошибка {err}. Будет повторный запуск через 30 сек.")
