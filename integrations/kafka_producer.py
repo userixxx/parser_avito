@@ -37,6 +37,7 @@ class KafkaListingProducer:
     def __init__(self):
         self._bootstrap = os.environ.get('KAFKA_BOOTSTRAP_SERVERS', '')
         self._topic = os.environ.get('KAFKA_TOPIC', 'listings.new')
+        self._city = os.environ.get('CITY', 'spb')
         self._producer: KafkaProducer | None = None
 
     def enabled(self) -> bool:
@@ -61,6 +62,7 @@ class KafkaListingProducer:
         clean_path = ad.urlPath.split('?')[0]
         message = {
             'avito_url': f'https://www.avito.ru{clean_path}',
+            'city':      self._city,
             'address': (
                 ad.coords.get('address_user')
                 or (ad.geo.formattedAddress if ad.geo else '')
