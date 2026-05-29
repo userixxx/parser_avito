@@ -28,6 +28,8 @@ WORKDIR /app
 
 COPY parser_avito/requirements.txt /app/requirements.txt
 COPY core/shared/python/pvz_common/requirements.txt /app/shared_requirements.txt
+ARG PIP_INDEX_URL=https://pypi.org/simple
+ENV PIP_INDEX_URL=${PIP_INDEX_URL}
 RUN pip install --upgrade pip && pip install -r /app/shared_requirements.txt -r /app/requirements.txt
 
 RUN python -m playwright install chromium-headless-shell
