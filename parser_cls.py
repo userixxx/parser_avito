@@ -39,7 +39,8 @@ class AvitoParse:
     def __init__(
             self,
             config: AvitoConfig,
-            stop_event=None
+            stop_event=None,
+            url_deal_types: Optional[dict] = None,
     ):
         self.config = config
         self.proxy = build_proxy(self.config)
@@ -51,6 +52,7 @@ class AvitoParse:
         self.headers = HEADERS
         self.good_request_count = 0
         self.bad_request_count = 0
+        self.url_deal_types = url_deal_types or {}
         self.http = HttpClient(
             proxy=self.proxy,
             cookies=self.cookies_provider,
@@ -106,13 +108,12 @@ class AvitoParse:
 
     def parse(self):
         if not self.config.one_file_for_link:
-            # один storage на весь парсинг
             self.result_storage = build_result_storage(config=self.config)
 
         for _index, url in enumerate(self.config.urls):
+            deal_type = self.url_deal_types.get(url, 'rent')
 
             if self.config.one_file_for_link:
-                # storage для этой ссылки
                 self.result_storage = build_result_storage(
                     config=self.config,
                     link_index=_index
@@ -182,7 +183,7 @@ class AvitoParse:
 
                 filter_ads = self.filter_ads(ads=ads)
 
-                self._publish_to_kafka(filter_ads)
+                self._publish_to_kafka(filter_ads, deal_type=deal_type)
                 self.notifier.notify_many(ads=filter_ads)
 
                 # Просмотры
@@ -210,9 +211,9 @@ class AvitoParse:
             self.notifier.notify(message="Парсинг Авито завершён. Все ссылки обработаны")
             self.stop_event = True
 
-    def _publish_to_kafka(self, ads: list[Item]) -> None:
+    def _publish_to_kafka(self, ads: list[Item], deal_type: str = 'rent') -> None:
         for ad in ads:
-            self.kafka_producer.publish(ad)
+            self.kafka_producer.publish(ad, deal_type=deal_type)
 
     @staticmethod
     def _clean_null_ads(ads: list[Item]) -> list[Item]:
@@ -327,52 +328,97 @@ class AvitoParse:
             logger.info(f"При сохранении в БД ошибка {err}")
 
 
-def _build_remote_config() -> Optional[RemoteConfig]:
+SALE_ENABLED_CITIES = {"spb"}
+
+
+def _build_remote_configs() -> tuple[Optional[RemoteConfig], Optional[RemoteConfig]]:
     try:
         boot = load_boot_config("avito")
     except BootConfigError as err:
         logger.warning(f"RemoteConfig boot failed, using static config only: {err}")
-        return None
+        return None, None
 
-    rc = RemoteConfig(
+    rc_rent = RemoteConfig(
         source=boot.source,
         city=boot.city,
         api_url=boot.api_url,
         token=boot.token,
+        deal_type="rent",
     )
     try:
-        asyncio.run(rc.get())
-        logger.info(f"RemoteConfig initialized for source=avito city={boot.city}")
-        return rc
+        asyncio.run(rc_rent.get())
+        logger.info(f"RemoteConfig initialized for source=avito city={boot.city} deal_type=rent")
     except Exception as err:
-        logger.error(f"RemoteConfig initial fetch failed, using static config only: {err}")
-        return None
+        logger.error(f"RemoteConfig rent initial fetch failed, using static config only: {err}")
+        return None, None
+
+    rc_sale: Optional[RemoteConfig] = None
+    if boot.city in SALE_ENABLED_CITIES:
+        rc_sale = RemoteConfig(
+            source=boot.source,
+            city=boot.city,
+            api_url=boot.api_url,
+            token=boot.token,
+            deal_type="sale",
+        )
+        try:
+            asyncio.run(rc_sale.get())
+            logger.info(f"RemoteConfig initialized for source=avito city={boot.city} deal_type=sale")
+        except Exception as err:
+            logger.info(f"RemoteConfig sale not available (rent продолжает работать): {err}")
+
+    return rc_rent, rc_sale
 
 
-def _resolve_runtime_config(base: AvitoConfig, rc: Optional[RemoteConfig]) -> Optional[AvitoConfig]:
-    if rc is None:
-        return base
+def _resolve_runtime_config(
+    base: AvitoConfig,
+    rc_rent: Optional[RemoteConfig],
+    rc_sale: Optional[RemoteConfig],
+) -> Optional[tuple[AvitoConfig, dict]]:
+    if rc_rent is None:
+        return base, {url: 'rent' for url in (base.urls or [])}
+
     try:
-        snapshot = asyncio.run(rc.get())
+        rent_snap = asyncio.run(rc_rent.get())
     except RemoteConfigError as err:
-        logger.warning(f"RemoteConfig unavailable, using static config: {err}")
-        return base
+        logger.warning(f"RemoteConfig rent unavailable, using static config: {err}")
+        return base, {url: 'rent' for url in (base.urls or [])}
 
-    if not snapshot.enabled:
+    if not rent_snap.enabled:
         return None
+
+    urls: list[str] = []
+    url_deal_types: dict[str, str] = {}
+
+    if rent_snap.search_url:
+        urls.append(rent_snap.search_url)
+        url_deal_types[rent_snap.search_url] = 'rent'
+
+    if rc_sale is not None:
+        try:
+            sale_snap = asyncio.run(rc_sale.get())
+        except RemoteConfigError as err:
+            logger.info(f"Sale config not available (продолжаем rent only): {err}")
+            sale_snap = None
+
+        if sale_snap is not None and sale_snap.enabled and sale_snap.search_url:
+            urls.append(sale_snap.search_url)
+            url_deal_types[sale_snap.search_url] = 'sale'
 
     runtime = copy.copy(base)
 
-    if snapshot.search_url:
-        runtime.urls = [snapshot.search_url]
+    if urls:
+        runtime.urls = urls
+    else:
+        url_deal_types = {url: 'rent' for url in (runtime.urls or [])}
 
-    if snapshot.proxy_string:
-        runtime.proxy_string = snapshot.proxy_string
+    if rent_snap.proxy_string:
+        runtime.proxy_string = rent_snap.proxy_string
 
-    if snapshot.proxy_change_url:
-        runtime.proxy_change_url = snapshot.proxy_change_url
+    if rent_snap.proxy_change_url:
+        runtime.proxy_change_url = rent_snap.proxy_change_url
 
-    return runtime
+    return runtime, url_deal_types
 
 
 if __name__ == "__main__":
@@ -382,17 +428,19 @@ if __name__ == "__main__":
         logger.error(f"Ошибка загрузки конфига: {err}")
         exit(1)
 
-    remote_config_client = _build_remote_config()
+    rc_rent, rc_sale = _build_remote_configs()
 
     while True:
         try:
-            runtime_config = _resolve_runtime_config(config, remote_config_client)
-            if runtime_config is None:
+            resolved = _resolve_runtime_config(config, rc_rent, rc_sale)
+            if resolved is None:
                 logger.info("Парсер выключен через админку, пауза 60 сек")
                 time.sleep(60)
                 continue
 
-            parser = AvitoParse(runtime_config)
+            runtime_config, url_deal_types = resolved
+
+            parser = AvitoParse(runtime_config, url_deal_types=url_deal_types)
             parser.parse()
             if runtime_config.one_time_start:
                 logger.info("Парсинг завершен т.к. включён one_time_start в настройках")

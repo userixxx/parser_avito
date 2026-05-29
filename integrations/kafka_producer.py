@@ -53,14 +53,19 @@ class KafkaListingProducer:
             )
         return self._producer
 
-    def publish(self, ad: Item) -> bool:
+    def publish(self, ad: Item, deal_type: str = 'rent') -> bool:
         if not self.enabled():
             return False
         if not ad.coords or 'lat' not in ad.coords or 'lng' not in ad.coords:
             return False
 
+        if deal_type not in ('rent', 'sale'):
+            deal_type = 'rent'
+
         clean_path = ad.urlPath.split('?')[0]
         message = {
+            'source':    'avito',
+            'deal_type': deal_type,
             'avito_url': f'https://www.avito.ru{clean_path}',
             'city':      self._city,
             'address': (
@@ -92,7 +97,7 @@ class KafkaListingProducer:
                 value=message,
             )
             self._get_producer().flush(timeout=5)
-            logger.info(f"Kafka: published {ad.id} | {message['address']}")
+            logger.info(f"Kafka: published {ad.id} | deal_type={deal_type} | {message['address']}")
             return True
         except Exception as err:
             logger.error(f"Kafka: failed to publish {ad.id}: {err}")
