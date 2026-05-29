@@ -387,13 +387,13 @@ def _resolve_runtime_config(
     if not rent_snap.enabled:
         return None
 
-    urls: list[str] = []
-    url_deal_types: dict[str, str] = {}
-
+    rent_urls: list[str] = []
     if rent_snap.search_url:
-        urls.append(rent_snap.search_url)
-        url_deal_types[rent_snap.search_url] = 'rent'
+        rent_urls.append(rent_snap.search_url)
+    else:
+        rent_urls.extend(base.urls or [])
 
+    sale_urls: list[str] = []
     if rc_sale is not None:
         try:
             sale_snap = asyncio.run(rc_sale.get())
@@ -402,15 +402,17 @@ def _resolve_runtime_config(
             sale_snap = None
 
         if sale_snap is not None and sale_snap.enabled and sale_snap.search_url:
-            urls.append(sale_snap.search_url)
-            url_deal_types[sale_snap.search_url] = 'sale'
+            sale_urls.append(sale_snap.search_url)
+
+    url_deal_types: dict[str, str] = {}
+    for u in rent_urls:
+        url_deal_types[u] = 'rent'
+    for u in sale_urls:
+        url_deal_types[u] = 'sale'
 
     runtime = copy.copy(base)
-
-    if urls:
-        runtime.urls = urls
-    else:
-        url_deal_types = {url: 'rent' for url in (runtime.urls or [])}
+    if rent_urls or sale_urls:
+        runtime.urls = [*rent_urls, *sale_urls]
 
     if rent_snap.proxy_string:
         runtime.proxy_string = rent_snap.proxy_string
