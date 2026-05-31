@@ -139,9 +139,10 @@ class AvitoParse:
                             break
 
                 if not html_code:
+                    _pause = random.uniform(1, 7)
                     logger.warning(
-                        f"Не удалось получить HTML для {url}, пробую заново через {self.config.pause_between_links} сек.")
-                    time.sleep(random.uniform(1, 7))
+                        f"Не удалось получить HTML для {url}, пробую заново через {_pause:.1f} сек.")
+                    time.sleep(_pause)
                     continue
 
                 data_from_page = self.find_json_on_page(html_code=html_code)
@@ -196,8 +197,9 @@ class AvitoParse:
                     self.__save_viewed(ads=filter_ads)
                     ads_in_link.extend(filter_ads)
 
-                logger.info(f"Пауза {self.config.pause_between_links} сек.")
-                time.sleep(random.uniform(1, 7))
+                _pause = random.uniform(1, 7)
+                logger.info(f"Пауза {_pause:.1f} сек.")
+                time.sleep(_pause)
 
             if ads_in_link:
                 logger.info(f"Сохраняю {len(ads_in_link)} объявлений")
