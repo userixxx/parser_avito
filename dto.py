@@ -46,6 +46,7 @@ class AvitoConfig:
     save_xlsx: bool = True
     use_webdriver: bool = True
     use_bypass_api: bool = False
+    use_cookie_pool: bool = False
     cookies_api_key: str = None
     output_dir: Path = Path("result")
     use_own_cookies: bool = False
