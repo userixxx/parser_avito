@@ -8,17 +8,21 @@ from loguru import logger
 from models import Item
 
 
-def _extract_area(title: str | None) -> float | None:
-    if not title:
-        return None
-    match = re.search(
-        r'(\d+(?:[.,]\d+)?)\s*(?:м²|м2|m2|кв\.?\s*м\.?|кв\.?\s*метр\w*|м\.?\s*кв\.?|квадратн\w*\s*метр\w*)',
-        title,
-        re.IGNORECASE,
-    )
-    if not match:
-        return None
-    return float(match.group(1).replace(',', '.'))
+_AREA_UNIT = r'(?:м²|м2|m2|кв\.?\s*м\.?|кв\.?\s*метр\w*|м\.?\s*кв\.?|квадратн\w*\s*метр\w*)'
+_AREA_RE = re.compile(r'(\d+(?:[.,]\d+)?)\s*' + _AREA_UNIT, re.IGNORECASE)
+_AREA_LABELED_RE = re.compile(r'площад\w*\W{0,12}(\d+(?:[.,]\d+)?)\s*' + _AREA_UNIT, re.IGNORECASE)
+
+
+def _extract_area(title: str | None, description: str | None = None) -> float | None:
+    if title:
+        match = _AREA_RE.search(title)
+        if match:
+            return float(match.group(1).replace(',', '.'))
+    if description:
+        match = _AREA_LABELED_RE.search(description)
+        if match:
+            return float(match.group(1).replace(',', '.'))
+    return None
 
 
 def _extract_total_price(pd) -> int | None:
@@ -90,7 +94,7 @@ class KafkaListingProducer:
         if price is not None:
             message['price'] = price
 
-        area = _extract_area(ad.title)
+        area = _extract_area(ad.title, ad.description)
         if area is not None:
             message['area'] = area
 
