@@ -11,7 +11,11 @@ from models import Item
 def _extract_area(title: str | None) -> float | None:
     if not title:
         return None
-    match = re.search(r'(\d+[.,]?\d*)\s*м[²2]', title)
+    match = re.search(
+        r'(\d+(?:[.,]\d+)?)\s*(?:м²|м2|m2|кв\.?\s*м\.?|кв\.?\s*метр\w*|м\.?\s*кв\.?|квадратн\w*\s*метр\w*)',
+        title,
+        re.IGNORECASE,
+    )
     if not match:
         return None
     return float(match.group(1).replace(',', '.'))
