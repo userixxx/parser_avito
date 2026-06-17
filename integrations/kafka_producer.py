@@ -87,6 +87,7 @@ class KafkaListingProducer:
             'description':  ad.description,
             'published_at': ad.sortTimeStamp,
             'seller_id':    ad.sellerId,
+            'seller_url':   f'https://www.avito.ru/brands/{ad.sellerId}' if ad.sellerId else None,
             'is_promotion': ad.isPromotion,
         }
 
