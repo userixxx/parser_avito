@@ -235,7 +235,7 @@ class AvitoParse:
                         if script.get('type') == 'mime/invalid' and script.get('data-mfe-state') == 'true' and 'sandbox' not in script.text:
                             data = json.loads(html_lib.unescape(script.text))
                             if data.get('i18n', {}).get('hasMessages', {}):
-                                return data.get('state', {}).get('data', {})
+                                return data.get('loaderData', {}).get('data', {}) or data.get('state', {}).get('data', {})
 
         except Exception as err:
             logger.error(f"Ошибка при поиске информации на странице: {err}")
