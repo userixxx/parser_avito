@@ -19,6 +19,8 @@ class HttpClient:
         max_retries: int = 5,
         retry_delay: int = 5,
         block_threshold: int = 3,
+        equip_after: int = 3,
+        on_subnet_block=None,
     ):
         self.proxy = proxy
         self.cookies = cookies
@@ -26,8 +28,11 @@ class HttpClient:
         self.max_retries = max_retries
         self.retry_delay = retry_delay
         self.block_threshold = block_threshold
+        self.equip_after = equip_after
+        self.on_subnet_block = on_subnet_block
 
         self._block_attempts = 0
+        self._block_limit_events = 0
 
     def _build_client(self) -> requests.Session:
         _impersonate = random.choice(["tor", "edge", "firefox", "safari"])
@@ -93,12 +98,22 @@ class HttpClient:
                         self.proxy.handle_block()
                         self._block_attempts = 0
 
+                        self._block_limit_events += 1
+                        if self.on_subnet_block and self._block_limit_events >= self.equip_after:
+                            logger.warning("Смена IP не помогает (subnet-блок), запрашиваю смену оборудования")
+                            try:
+                                self.on_subnet_block()
+                            except Exception as e:
+                                logger.warning(f"on_subnet_block error: {e}")
+                            self._block_limit_events = 0
+
                     time.sleep(self.retry_delay)
                     continue
 
                 # === успех ===
                 response.raise_for_status()
                 self._block_attempts = 0
+                self._block_limit_events = 0
                 return response
 
             except requests.RequestsError as e:

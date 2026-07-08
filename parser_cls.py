@@ -25,6 +25,7 @@ from parser.export.factory import build_result_storage
 from parser.http.client import HttpClient
 from parser.proxies.proxy_factory import build_proxy
 from pvz_common.config_boot import load_boot_config, BootConfigError
+from pvz_common.equipment import EquipmentEscalator
 from pvz_common.heartbeat import Heartbeat
 from pvz_common.remote_config import RemoteConfig, RemoteConfigError
 from utils.build_api_params import build_api_params
@@ -54,18 +55,35 @@ class AvitoParse:
         self.good_request_count = 0
         self.bad_request_count = 0
         self.url_deal_types = url_deal_types or {}
+        self._equipment_escalator = self._build_equipment_escalator()
         self.http = HttpClient(
             proxy=self.proxy,
             cookies=self.cookies_provider,
             timeout=config.timeout,
             max_retries=self.config.max_count_of_retry,
             retry_delay=config.retry_delay,
-            block_threshold=config.block_threshold
+            block_threshold=config.block_threshold,
+            on_subnet_block=self._on_subnet_block,
         )
         self.ads_filter = AdsFilter(config=config, is_viewed_fn=self.is_viewed)
         self.kafka_producer = KafkaListingProducer()
         log_config(config=self.config, version=VERSION)
 
+    def _build_equipment_escalator(self):
+        try:
+            boot = load_boot_config("avito")
+        except BootConfigError:
+            return None
+        return EquipmentEscalator(
+            source="avito",
+            city=boot.city,
+            api_url=boot.api_url,
+            token=boot.token,
+        )
+
+    def _on_subnet_block(self):
+        if self._equipment_escalator is not None:
+            self._equipment_escalator.escalate("avito: subnet-блок, ротация IP не помогает")
 
     def get_proxy_obj(self) -> Proxy | None:
         if all([self.config.proxy_string, self.config.proxy_change_url]):
