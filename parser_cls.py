@@ -25,6 +25,7 @@ from parser.export.factory import build_result_storage
 from parser.http.client import HttpClient
 from parser.proxies.proxy_factory import build_proxy
 from pvz_common.config_boot import load_boot_config, BootConfigError
+from pvz_common.heartbeat import Heartbeat
 from pvz_common.remote_config import RemoteConfig, RemoteConfigError
 from utils.build_api_params import build_api_params
 from utils.parse_phone import ParsePhone
@@ -434,6 +435,18 @@ if __name__ == "__main__":
 
     rc_rent, rc_sale = _build_remote_configs()
 
+    try:
+        _boot = load_boot_config("avito")
+        heartbeat = Heartbeat(
+            source=_boot.source,
+            city=_boot.city,
+            api_url=_boot.api_url,
+            token=_boot.token,
+            kind="scrape",
+        )
+    except BootConfigError:
+        heartbeat = None
+
     while True:
         try:
             resolved = _resolve_runtime_config(config, rc_rent, rc_sale)
@@ -446,6 +459,8 @@ if __name__ == "__main__":
 
             parser = AvitoParse(runtime_config, url_deal_types=url_deal_types)
             parser.parse()
+            if heartbeat is not None:
+                heartbeat.ok()
             if runtime_config.one_time_start:
                 logger.info("Парсинг завершен т.к. включён one_time_start в настройках")
                 break
@@ -454,4 +469,6 @@ if __name__ == "__main__":
         except Exception as err:
             logger.exception(err)
             logger.error(f"Произошла ошибка {err}. Будет повторный запуск через 30 сек.")
+            if heartbeat is not None:
+                heartbeat.fail(err)
             time.sleep(30)
