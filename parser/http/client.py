@@ -10,7 +10,7 @@ from parser.cookies.base import CookiesProvider
 from parser.proxies.proxy import Proxy
 
 BLOCK_CODES = (401, 403, 429)
-COOKIE_FREE_URL = "https://www.avito.ru/"
+FEED_MARKERS = ("loaderData", '"items"')
 
 
 class HttpClient:
@@ -61,22 +61,43 @@ class HttpClient:
 
         return session
 
-    def _ip_is_blocked(self) -> bool:
+    @staticmethod
+    def _looks_like_feed(response) -> bool:
+        if response.status_code != 200:
+            return False
+        body = response.text or ""
+        return any(marker in body for marker in FEED_MARKERS)
+
+    def _cookie_is_guilty(self, method: str, url: str, kwargs: dict) -> bool:
+        probe_kwargs = {key: value for key, value in kwargs.items() if key != "cookies"}
+
         try:
             with self._build_client() as client:
-                response = client.get(COOKIE_FREE_URL, timeout=self.timeout, allow_redirects=True)
+                response = client.request(
+                    method,
+                    url,
+                    timeout=self.timeout,
+                    allow_redirects=True,
+                    **probe_kwargs,
+                )
         except Exception as err:
-            logger.warning(f"Проверка IP не удалась ({err}) — считаем, что блокирует IP")
-            return True
+            logger.warning(f"Контрольный запрос без куки не удался ({err}) — куку не виним")
+            return False
 
         if response.status_code in BLOCK_CODES:
             logger.warning(
-                f"Главная без куки тоже заблокирована ({response.status_code}) — "
+                f"Тот же запрос без куки тоже заблокирован ({response.status_code}) — "
                 f"блокирует IP, кука ни при чём"
             )
+            return False
+
+        if self._looks_like_feed(response):
+            logger.warning("Без куки выдача приходит, с кукой блок — кука мертва, меняем")
             return True
 
-        logger.warning(f"Главная без куки открылась ({response.status_code}) — IP чист, виновата кука")
+        logger.warning(
+            f"Без куки: HTTP {response.status_code} без выдачи — доказательств против куки нет"
+        )
         return False
 
     def request(self, method: str, url: str, **kwargs):
@@ -113,7 +134,7 @@ class HttpClient:
                     if self._block_attempts >= self.block_threshold:
                         logger.warning("Достигнут лимит блокировок, запускается обработка")
 
-                        if self.cookies and not self._ip_is_blocked():
+                        if self.cookies and self._cookie_is_guilty(method, url, kwargs):
                             self.cookies.handle_block()
 
                         self.proxy.handle_block()
