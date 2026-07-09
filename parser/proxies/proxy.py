@@ -41,12 +41,14 @@ class MobileProxy(Proxy):
 
     _preferred_channel: dict[str, int] = {}
 
-    def __init__(self, url, change_ip_url, api_proxy=None, on_rotation_failed=None, timeout: int = 10):
+    def __init__(self, url, change_ip_url, api_proxy=None, on_rotation_failed=None, timeout: int = 30,
+                 probe_timeout: int = 5):
         self.url = url
         self.change_ip_url = change_ip_url
         self.api_proxy = api_proxy
         self.on_rotation_failed = on_rotation_failed
         self.timeout = timeout
+        self.probe_timeout = probe_timeout
         self.channels = self._build_channels()
 
     def get_httpx_proxy(self):
@@ -56,30 +58,68 @@ class MobileProxy(Proxy):
         if not self.channels:
             return False
 
-        preferred = self._preferred_channel.get(self.change_ip_url, 0) % len(self.channels)
-        rotated = self.channels[preferred:] + self.channels[:preferred]
+        preferred = self._preferred_channel.get(self.change_ip_url)
+        order = self._order(preferred)
         failures = []
 
-        for offset, (url, proxies) in enumerate(rotated):
+        for index in order:
+            url, proxies = self.channels[index]
             label = self._label(url, proxies)
-            try:
-                response = requests.get(url, params={"format": "json"}, proxies=proxies, timeout=self.timeout)
-            except requests.RequestException as err:
-                failures.append(f"{label}: {type(err).__name__}")
+
+            if index != preferred and not self._probe(url, proxies):
+                failures.append(f"{label}: канал недоступен")
                 continue
 
-            succeeded, detail = self._interpret(response)
-            if succeeded:
-                self._preferred_channel[self.change_ip_url] = (preferred + offset) % len(self.channels)
+            outcome, detail = self._rotate(url, proxies)
+
+            if outcome == "ok":
+                self._preferred_channel[self.change_ip_url] = index
                 logger.success(f"Смена IP через {label}: {detail}")
+                return True
+
+            if outcome == "pending":
+                self._preferred_channel[self.change_ip_url] = index
+                logger.info(f"Смена IP через {label}: запущена, ответ не дождались")
                 return True
 
             failures.append(f"{label}: {detail}")
 
+        self._preferred_channel.pop(self.change_ip_url, None)
         reason = "смена IP не удалась ни по одному каналу — " + "; ".join(failures)
         logger.error(f"Ротация IP недоступна: {reason}")
         self._notify_failure(reason)
         return False
+
+    def _order(self, preferred: int | None) -> list[int]:
+        indexes = list(range(len(self.channels)))
+        if preferred is None or preferred >= len(self.channels):
+            return indexes
+        return [preferred] + [i for i in indexes if i != preferred]
+
+    def _probe(self, url: str, proxies: dict | None) -> bool:
+        try:
+            requests.get(self._without_key(url), params={"format": "json"},
+                         proxies=proxies, timeout=self.probe_timeout)
+            return True
+        except requests.RequestException:
+            return False
+
+    def _rotate(self, url: str, proxies: dict | None) -> tuple[str, str]:
+        try:
+            response = requests.get(url, params={"format": "json"}, proxies=proxies, timeout=self.timeout)
+        except requests.ReadTimeout:
+            return "pending", "ReadTimeout"
+        except requests.RequestException as err:
+            return "error", type(err).__name__
+
+        succeeded, detail = self._interpret(response)
+        return ("ok" if succeeded else "error"), detail
+
+    @staticmethod
+    def _without_key(url: str) -> str:
+        parts = urlsplit(url)
+        query = "&".join(p for p in parts.query.split("&") if not p.startswith("proxy_key="))
+        return urlunsplit((parts.scheme, parts.netloc, parts.path or "/", query, ""))
 
     def _build_channels(self) -> list[tuple[str, dict | None]]:
         current = urlsplit(self.change_ip_url).netloc
