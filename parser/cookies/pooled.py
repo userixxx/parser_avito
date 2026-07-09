@@ -98,6 +98,7 @@ class PooledCookiesProvider(CookiesProvider):
             res = requests.get(
                 f"{self.api_url}/api/internal/avito/cookies/lease",
                 headers=self.headers,
+                params={"city": self.city} if self.city else None,
                 timeout=self.lease_timeout,
             )
         except requests.RequestException as e:
