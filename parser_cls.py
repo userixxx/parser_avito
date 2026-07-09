@@ -34,6 +34,7 @@ from utils.parse_phone import ParsePhone
 from version import VERSION
 
 DEBUG_MODE = False
+ANTIBOT_PAGE_MAX_LEN = 200_000
 
 logger.add("logs/app.log", rotation="5 MB", retention="5 days", level="DEBUG")
 
@@ -130,6 +131,22 @@ class AvitoParse:
             logger.warning(f"Ошибка при запросе {url}: {err}")
             return None
 
+    def _handle_feed_without_data(self, html_code: str) -> None:
+        self.bad_request_count += 1
+
+        if len(html_code) < ANTIBOT_PAGE_MAX_LEN:
+            logger.warning(
+                f"Ответ 200 без выдачи, страница {len(html_code)} символов — кука мертва, меняем"
+            )
+            if self.cookies_provider:
+                self.cookies_provider.handle_block()
+            return
+
+        logger.error(
+            f"Ответ 200 без выдачи, но страница полная ({len(html_code)} символов) — "
+            f"похоже, сменился формат SERP"
+        )
+
     def fetch_api_data(self, base_params: dict, page: int, context: str):
         params = base_params.copy()
 
@@ -192,6 +209,10 @@ class AvitoParse:
                     continue
 
                 data_from_page = self.find_json_on_page(html_code=html_code)
+
+                if i == 0 and not data_from_page:
+                    self._handle_feed_without_data(html_code)
+                    continue
 
                 if i == 0:
                     search_core = data_from_page.get("searchCore") or {}

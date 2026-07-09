@@ -9,6 +9,9 @@ from loguru import logger
 from parser.cookies.base import CookiesProvider
 from parser.proxies.proxy import Proxy
 
+BLOCK_CODES = (401, 403, 429)
+COOKIE_FREE_URL = "https://www.avito.ru/"
+
 
 class HttpClient:
     def __init__(
@@ -58,6 +61,24 @@ class HttpClient:
 
         return session
 
+    def _ip_is_blocked(self) -> bool:
+        try:
+            with self._build_client() as client:
+                response = client.get(COOKIE_FREE_URL, timeout=self.timeout, allow_redirects=True)
+        except Exception as err:
+            logger.warning(f"Проверка IP не удалась ({err}) — считаем, что блокирует IP")
+            return True
+
+        if response.status_code in BLOCK_CODES:
+            logger.warning(
+                f"Главная без куки тоже заблокирована ({response.status_code}) — "
+                f"блокирует IP, кука ни при чём"
+            )
+            return True
+
+        logger.warning(f"Главная без куки открылась ({response.status_code}) — IP чист, виновата кука")
+        return False
+
     def request(self, method: str, url: str, **kwargs):
         last_exc = None
 
@@ -81,7 +102,7 @@ class HttpClient:
                     self.cookies.update(response)
 
                 # === обработка блокировок ===
-                if response.status_code in (401, 403, 429):
+                if response.status_code in BLOCK_CODES:
                     self._block_attempts += 1
 
                     logger.warning(
@@ -92,7 +113,7 @@ class HttpClient:
                     if self._block_attempts >= self.block_threshold:
                         logger.warning("Достигнут лимит блокировок, запускается обработка")
 
-                        if self.cookies:
+                        if self.cookies and not self._ip_is_blocked():
                             self.cookies.handle_block()
 
                         self.proxy.handle_block()
