@@ -1,3 +1,4 @@
+import time
 from abc import ABC, abstractmethod
 from urllib.parse import urlsplit, urlunsplit
 
@@ -40,15 +41,17 @@ class MobileProxy(Proxy):
     BUSY_MARKERS = ("already change ip",)
 
     _preferred_channel: dict[str, int] = {}
+    _last_rotation_at: dict[str, float] = {}
 
     def __init__(self, url, change_ip_url, api_proxy=None, on_rotation_failed=None, timeout: int = 30,
-                 probe_timeout: int = 5):
+                 probe_timeout: int = 5, cooldown: int = 120):
         self.url = url
         self.change_ip_url = change_ip_url
         self.api_proxy = api_proxy
         self.on_rotation_failed = on_rotation_failed
         self.timeout = timeout
         self.probe_timeout = probe_timeout
+        self.cooldown = cooldown
         self.channels = self._build_channels()
 
     def get_httpx_proxy(self):
@@ -57,6 +60,11 @@ class MobileProxy(Proxy):
     def handle_block(self) -> bool:
         if not self.channels:
             return False
+
+        waited = self._seconds_since_rotation()
+        if waited < self.cooldown:
+            logger.info(f"Смена IP пропущена: кулдаун, прошло {int(waited)}с из {self.cooldown}с")
+            return True
 
         preferred = self._preferred_channel.get(self.change_ip_url)
         order = self._order(preferred)
@@ -73,12 +81,12 @@ class MobileProxy(Proxy):
             outcome, detail = self._rotate(url, proxies)
 
             if outcome == "ok":
-                self._preferred_channel[self.change_ip_url] = index
+                self._remember_rotation(index)
                 logger.success(f"Смена IP через {label}: {detail}")
                 return True
 
             if outcome == "pending":
-                self._preferred_channel[self.change_ip_url] = index
+                self._remember_rotation(index)
                 logger.info(f"Смена IP через {label}: запущена, ответ не дождались")
                 return True
 
@@ -89,6 +97,14 @@ class MobileProxy(Proxy):
         logger.error(f"Ротация IP недоступна: {reason}")
         self._notify_failure(reason)
         return False
+
+    def _seconds_since_rotation(self) -> float:
+        last = self._last_rotation_at.get(self.change_ip_url)
+        return self.cooldown if last is None else time.monotonic() - last
+
+    def _remember_rotation(self, index: int) -> None:
+        self._preferred_channel[self.change_ip_url] = index
+        self._last_rotation_at[self.change_ip_url] = time.monotonic()
 
     def _order(self, preferred: int | None) -> list[int]:
         indexes = list(range(len(self.channels)))
