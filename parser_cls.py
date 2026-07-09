@@ -24,6 +24,7 @@ from parser.cookies.factory import build_cookies_provider
 from parser.export.factory import build_result_storage
 from parser.http.client import HttpClient
 from parser.proxies.proxy_factory import build_proxy
+from pvz_common.alerts import AlertClient
 from pvz_common.config_boot import load_boot_config, BootConfigError
 from pvz_common.equipment import EquipmentEscalator
 from pvz_common.heartbeat import Heartbeat
@@ -45,7 +46,8 @@ class AvitoParse:
             url_deal_types: Optional[dict] = None,
     ):
         self.config = config
-        self.proxy = build_proxy(self.config)
+        self._alert_client = self._build_alert_client()
+        self.proxy = build_proxy(self.config, on_rotation_failed=self._on_rotation_failed)
         self.cookies_provider = build_cookies_provider(config=config)
         self.db_handler = SQLiteDBHandler()
         self.notifier = build_notifier(config=config)
@@ -81,9 +83,29 @@ class AvitoParse:
             token=boot.token,
         )
 
+    def _build_alert_client(self):
+        try:
+            boot = load_boot_config("avito")
+        except BootConfigError:
+            return None
+        return AlertClient(
+            source="avito",
+            city=boot.city,
+            api_url=boot.api_url,
+            token=boot.token,
+        )
+
     def _on_subnet_block(self):
         if self._equipment_escalator is not None:
             self._equipment_escalator.escalate("avito: subnet-блок, ротация IP не помогает")
+
+    def _on_rotation_failed(self, reason: str):
+        if self._alert_client is not None:
+            self._alert_client.send(
+                text=f"ротация IP недоступна ({reason})",
+                level="critical",
+                dedup_key="rotation",
+            )
 
     def get_proxy_obj(self) -> Proxy | None:
         if all([self.config.proxy_string, self.config.proxy_change_url]):
@@ -152,7 +174,12 @@ class AvitoParse:
                         html_code = self.fetch_data(url=url)
                     else:
                         if api_params and context:
-                            json_data = self.fetch_api_data(api_params, page=i + 1, context=context)
+                            try:
+                                json_data = self.fetch_api_data(api_params, page=i + 1, context=context)
+                            except Exception as err:
+                                self.bad_request_count += 1
+                                logger.warning(f"Страница {i + 1} недоступна, дальше не идём: {err}")
+                                break
                         else:
                             logger.info("Т.к. 1-я страница была неудачной - дальше смотреть не можем")
                             break
@@ -478,7 +505,13 @@ if __name__ == "__main__":
             parser = AvitoParse(runtime_config, url_deal_types=url_deal_types)
             parser.parse()
             if heartbeat is not None:
-                heartbeat.ok()
+                if parser.good_request_count > 0:
+                    heartbeat.ok(meta={"pages_ok": parser.good_request_count})
+                else:
+                    heartbeat.fail(
+                        "выдача не получена: страница 1 заблокирована",
+                        meta={"bad_requests": parser.bad_request_count},
+                    )
             if runtime_config.one_time_start:
                 logger.info("Парсинг завершен т.к. включён one_time_start в настройках")
                 break
