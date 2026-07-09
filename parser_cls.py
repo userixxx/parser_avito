@@ -210,6 +210,9 @@ class AvitoParse:
                     logger.error(f"При валидации объявлений произошла ошибка: {err}")
                     continue
 
+                if self.cookies_provider:
+                    self.cookies_provider.mark_success()
+
                 ads = self._clean_null_ads(ads=ads_models.items)
 
                 logger.info(f"Объявлений перед чисткой {len(ads)}")

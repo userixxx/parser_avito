@@ -63,11 +63,16 @@ class PooledCookiesProvider(CookiesProvider):
 
         self.last_status_code = code
 
-        if code == 200 and self.cookie_id is not None:
-            now = time.time()
-            if now - self.last_report_ok_at >= self.report_ok_interval:
-                self.last_report_ok_at = now
-                self._report(ok=True, status_code=code)
+    def mark_success(self) -> None:
+        if self.cookie_id is None:
+            return
+
+        now = time.time()
+        if now - self.last_report_ok_at < self.report_ok_interval:
+            return
+
+        self.last_report_ok_at = now
+        self._report(ok=True, status_code=self.last_status_code)
 
     def handle_block(self) -> None:
         had_pool_cookie = self.cookie_id is not None

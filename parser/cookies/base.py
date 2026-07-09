@@ -17,6 +17,9 @@ class CookiesProvider(ABC):
         """
         pass
 
+    def mark_success(self) -> None:
+        pass
+
     @abstractmethod
     def handle_block(self):
         """
