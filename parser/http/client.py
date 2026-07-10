@@ -37,22 +37,31 @@ class HttpClient:
         self._block_attempts = 0
         self._block_limit_events = 0
         self._last_impersonate = None
+        self._last_user_agent = None
 
-    def _build_client(self, impersonate: str | None = None) -> requests.Session:
+    def _build_client(
+        self,
+        impersonate: str | None = None,
+        user_agent: str | None = None,
+    ) -> requests.Session:
         _impersonate = impersonate or random.choice(["tor", "edge", "firefox", "safari"])
         self._last_impersonate = _impersonate
         session = requests.Session(
             impersonate=_impersonate,
         )
 
-        _chrome_version = str(random.randint(140, 147))
-        headers = {
-            "user-agent": f"Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                          f"AppleWebKit/537.36 (KHTML, like Gecko) "
-                          f"Chrome/{_chrome_version}.0.0.0 Safari/537.36",
-        }
+        if user_agent:
+            _user_agent = user_agent
+        else:
+            _chrome_version = str(random.randint(140, 147))
+            _user_agent = (
+                f"Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                f"AppleWebKit/537.36 (KHTML, like Gecko) "
+                f"Chrome/{_chrome_version}.0.0.0 Safari/537.36"
+            )
 
-        session.headers.update(headers)
+        self._last_user_agent = _user_agent
+        session.headers.update({"user-agent": _user_agent})
 
         proxy = self.proxy.get_httpx_proxy()
         if proxy:
@@ -70,8 +79,15 @@ class HttpClient:
         body = response.text or ""
         return any(marker in body for marker in FEED_MARKERS)
 
-    def _probe(self, method: str, url: str, probe_kwargs: dict, impersonate: str):
-        with self._build_client(impersonate) as client:
+    def _probe(
+        self,
+        method: str,
+        url: str,
+        probe_kwargs: dict,
+        impersonate: str,
+        user_agent: str,
+    ):
+        with self._build_client(impersonate, user_agent) as client:
             return client.request(
                 method,
                 url,
@@ -81,39 +97,60 @@ class HttpClient:
             )
 
     def _cookie_is_guilty(self, method: str, url: str, kwargs: dict) -> bool:
-        impersonate = self._last_impersonate
-        without_cookie = {key: value for key, value in kwargs.items() if key != "cookies"}
-        with_cookie = dict(kwargs)
-
-        try:
-            free = self._probe(method, url, without_cookie, impersonate)
-        except Exception as err:
-            logger.warning(f"Контрольный запрос без куки не удался ({err}) — куку не виним")
+        if not kwargs.get("cookies"):
+            logger.warning("Боевой запрос шёл без куки — винить нечего")
             return False
 
-        if free.status_code in BLOCK_CODES:
+        impersonate = self._last_impersonate
+        user_agent = self._last_user_agent
+
+        cookie_first = random.choice((True, False))
+
+        free_probe = ("free", {key: value for key, value in kwargs.items() if key != "cookies"})
+        cookie_probe = ("cookie", dict(kwargs))
+        probes = [cookie_probe, free_probe] if cookie_first else [free_probe, cookie_probe]
+
+        for position, (name, probe_kwargs) in enumerate(probes):
+            if position:
+                time.sleep(self.retry_delay)
+
+            try:
+                response = self._probe(method, url, probe_kwargs, impersonate, user_agent)
+            except Exception as err:
+                logger.warning(f"Контрольная проба ({name}) не удалась ({err}) — куку не виним")
+                return False
+
+            if name == "cookie" and self._looks_like_feed(response):
+                logger.warning("С кукой выдача тоже пришла — был шум, кука жива")
+                return False
+
+            if name == "free":
+                if response.status_code in BLOCK_CODES:
+                    logger.warning(
+                        f"Тот же запрос без куки тоже заблокирован ({response.status_code}) — "
+                        f"блокирует IP, кука ни при чём"
+                    )
+                    return False
+
+                if not self._looks_like_feed(response):
+                    logger.warning(
+                        f"Без куки: HTTP {response.status_code} без выдачи — "
+                        f"доказательств против куки нет"
+                    )
+                    return False
+
+        if not cookie_first:
             logger.warning(
-                f"Тот же запрос без куки тоже заблокирован ({free.status_code}) — "
-                f"блокирует IP, кука ни при чём"
+                "Без куки выдача, с кукой блок — но проба с кукой шла второй, "
+                "блок мог дать порядок запросов. Вердикт отложен до следующей проверки"
             )
             return False
 
-        if not self._looks_like_feed(free):
-            logger.warning(f"Без куки: HTTP {free.status_code} без выдачи — доказательств против куки нет")
-            return False
-
-        try:
-            recheck = self._probe(method, url, with_cookie, impersonate)
-        except Exception as err:
-            logger.warning(f"Перепроверка куки не удалась ({err}) — куку не виним")
-            return False
-
-        if recheck.status_code in BLOCK_CODES or not self._looks_like_feed(recheck):
-            logger.warning("Без куки выдача есть, с кукой блок (перепроверено) — кука мертва, меняем")
-            return True
-
-        logger.warning("С кукой выдача тоже пришла — был шум, кука жива")
-        return False
+        logger.warning(
+            "Проба с кукой шла первой и дала блок, проба без куки шла второй и дала выдачу — "
+            "кука мертва, меняем"
+        )
+        return True
 
     def request(self, method: str, url: str, **kwargs):
         last_exc = None
