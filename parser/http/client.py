@@ -36,9 +36,11 @@ class HttpClient:
 
         self._block_attempts = 0
         self._block_limit_events = 0
+        self._last_impersonate = None
 
-    def _build_client(self) -> requests.Session:
-        _impersonate = random.choice(["tor", "edge", "firefox", "safari"])
+    def _build_client(self, impersonate: str | None = None) -> requests.Session:
+        _impersonate = impersonate or random.choice(["tor", "edge", "firefox", "safari"])
+        self._last_impersonate = _impersonate
         session = requests.Session(
             impersonate=_impersonate,
         )
@@ -68,36 +70,49 @@ class HttpClient:
         body = response.text or ""
         return any(marker in body for marker in FEED_MARKERS)
 
+    def _probe(self, method: str, url: str, probe_kwargs: dict, impersonate: str):
+        with self._build_client(impersonate) as client:
+            return client.request(
+                method,
+                url,
+                timeout=self.timeout,
+                allow_redirects=True,
+                **probe_kwargs,
+            )
+
     def _cookie_is_guilty(self, method: str, url: str, kwargs: dict) -> bool:
-        probe_kwargs = {key: value for key, value in kwargs.items() if key != "cookies"}
+        impersonate = self._last_impersonate
+        without_cookie = {key: value for key, value in kwargs.items() if key != "cookies"}
+        with_cookie = dict(kwargs)
 
         try:
-            with self._build_client() as client:
-                response = client.request(
-                    method,
-                    url,
-                    timeout=self.timeout,
-                    allow_redirects=True,
-                    **probe_kwargs,
-                )
+            free = self._probe(method, url, without_cookie, impersonate)
         except Exception as err:
             logger.warning(f"Контрольный запрос без куки не удался ({err}) — куку не виним")
             return False
 
-        if response.status_code in BLOCK_CODES:
+        if free.status_code in BLOCK_CODES:
             logger.warning(
-                f"Тот же запрос без куки тоже заблокирован ({response.status_code}) — "
+                f"Тот же запрос без куки тоже заблокирован ({free.status_code}) — "
                 f"блокирует IP, кука ни при чём"
             )
             return False
 
-        if self._looks_like_feed(response):
-            logger.warning("Без куки выдача приходит, с кукой блок — кука мертва, меняем")
+        if not self._looks_like_feed(free):
+            logger.warning(f"Без куки: HTTP {free.status_code} без выдачи — доказательств против куки нет")
+            return False
+
+        try:
+            recheck = self._probe(method, url, with_cookie, impersonate)
+        except Exception as err:
+            logger.warning(f"Перепроверка куки не удалась ({err}) — куку не виним")
+            return False
+
+        if recheck.status_code in BLOCK_CODES or not self._looks_like_feed(recheck):
+            logger.warning("Без куки выдача есть, с кукой блок (перепроверено) — кука мертва, меняем")
             return True
 
-        logger.warning(
-            f"Без куки: HTTP {response.status_code} без выдачи — доказательств против куки нет"
-        )
+        logger.warning("С кукой выдача тоже пришла — был шум, кука жива")
         return False
 
     def request(self, method: str, url: str, **kwargs):
