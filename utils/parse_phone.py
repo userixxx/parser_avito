@@ -9,7 +9,7 @@ from models import Item
 
 
 class ParsePhone:
-    API_URL = "https://spfa.ru/api/phone/"
+    API_URL = "https://spfa.pro/api/phone/"
     DEFAULT_TIMEOUT = 30
     BATCH_SIZE = 10 # по сколько номеров парсить за раз
 

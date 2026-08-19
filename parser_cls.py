@@ -26,6 +26,7 @@ from parser.http.client import HttpClient
 from parser.proxies.proxy_factory import build_proxy
 from pvz_common.alerts import AlertClient
 from pvz_common.config_boot import load_boot_config, BootConfigError
+from pvz_common.removed_ids import RemovedIdsCache
 from pvz_common.equipment import EquipmentEscalator
 from pvz_common.heartbeat import Heartbeat
 from pvz_common.remote_config import RemoteConfig, RemoteConfigError
@@ -68,9 +69,23 @@ class AvitoParse:
             block_threshold=config.block_threshold,
             on_subnet_block=self._on_subnet_block,
         )
+        self.removed_ids = self._build_removed_ids_cache()
         self.ads_filter = AdsFilter(config=config, is_viewed_fn=self.is_viewed)
         self.kafka_producer = KafkaListingProducer()
         log_config(config=self.config, version=VERSION)
+
+    def _build_removed_ids_cache(self):
+        try:
+            boot = load_boot_config("avito")
+        except BootConfigError:
+            return None
+
+        return RemovedIdsCache(
+            api_url=boot.api_url,
+            token=boot.token,
+            city=boot.city,
+            source="avito",
+        )
 
     def _build_equipment_escalator(self):
         try:
@@ -384,6 +399,9 @@ class AvitoParse:
 
     def is_viewed(self, ad: Item) -> bool:
         """Проверяет, смотрели мы это или нет"""
+        if self.removed_ids is not None and self.removed_ids.contains(ad.id):
+            return False
+
         return self.db_handler.record_exists(record_id=ad.id, price=ad.priceDetailed.value)
 
     @staticmethod
