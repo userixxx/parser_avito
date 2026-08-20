@@ -12,11 +12,17 @@ def build_proxy(config: AvitoConfig, on_rotation_failed=None) -> Proxy:
 
     if config.proxy_string and config.proxy_change_url:
         logger.info("Прокси определен как мобильный")
+        kwargs = {}
+        if getattr(config, "mobile_mode", False):
+            kwargs["cooldown"] = config.mobile_rotate_cooldown
+            logger.info(f"Мобильный режим: ротация IP не чаще раза в {config.mobile_rotate_cooldown}с")
+
         return MobileProxy(
             config.proxy_string,
             config.proxy_change_url,
             api_proxy=resolve_api_proxy(),
             on_rotation_failed=on_rotation_failed,
+            **kwargs,
         )
 
     if config.proxy_string:
