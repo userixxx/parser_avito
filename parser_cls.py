@@ -1,6 +1,7 @@
 import asyncio
 import copy
 import json
+import os
 import random
 import re
 import time
@@ -36,6 +37,7 @@ from version import VERSION
 
 DEBUG_MODE = False
 ANTIBOT_PAGE_MAX_LEN = 200_000
+MOBILE_PAGE_SIZE = int(os.getenv("AVITO_MOBILE_PAGE_SIZE", "50"))
 
 logger.add("logs/app.log", rotation="5 MB", retention="5 days", level="DEBUG")
 
@@ -63,7 +65,7 @@ class AvitoParse:
         self.http = HttpClient(
             proxy=self.proxy,
             cookies=self.cookies_provider,
-            timeout=config.timeout,
+            timeout=config.mobile_timeout if config.mobile_mode else config.timeout,
             max_retries=self.config.max_count_of_retry,
             retry_delay=config.retry_delay,
             block_threshold=config.block_threshold,
@@ -162,6 +164,16 @@ class AvitoParse:
             f"похоже, сменился формат SERP"
         )
 
+    def fetch_mobile_page(self, api_url: str, page: int) -> dict:
+        separator = "&" if "?" in api_url else "?"
+        url = f"{api_url}{separator}limit={MOBILE_PAGE_SIZE}&page={page}"
+
+        response = self.http.request("GET", url)
+        data = response.json()
+        self.good_request_count += 1
+
+        return data
+
     def fetch_api_data(self, base_params: dict, page: int, context: str):
         params = base_params.copy()
 
@@ -194,6 +206,10 @@ class AvitoParse:
             ads_in_link = []
             api_params = None
             context = None
+            api_url = (self.config.api_urls or {}).get(url)
+
+            if api_url:
+                logger.info(f"Мобильный режим для {deal_type}: {api_url}")
 
             for i in range(0, self.config.count):
                 logger.info(f"page={i + 1}")
@@ -201,6 +217,13 @@ class AvitoParse:
                     return
                 if DEBUG_MODE:
                     html_code = open("may.txt", "r", encoding="utf-8").read()
+                elif api_url:
+                    try:
+                        json_data = self.fetch_mobile_page(api_url=api_url, page=i + 1)
+                    except Exception as err:
+                        self.bad_request_count += 1
+                        logger.warning(f"Мобильная выдача: страница {i + 1} недоступна, дальше не идём: {err}")
+                        break
                 else:
                     if i == 0:
                         html_code = self.fetch_data(url=url)
@@ -216,27 +239,30 @@ class AvitoParse:
                             logger.info("Т.к. 1-я страница была неудачной - дальше смотреть не можем")
                             break
 
-                if not html_code:
-                    _pause = random.uniform(1, 7)
-                    logger.warning(
-                        f"Не удалось получить HTML для {url}, пробую заново через {_pause:.1f} сек.")
-                    time.sleep(_pause)
-                    continue
+                if not api_url:
+                    if not html_code:
+                        _pause = random.uniform(1, 7)
+                        logger.warning(
+                            f"Не удалось получить HTML для {url}, пробую заново через {_pause:.1f} сек.")
+                        time.sleep(_pause)
+                        continue
 
-                data_from_page = self.find_json_on_page(html_code=html_code)
+                    data_from_page = self.find_json_on_page(html_code=html_code)
 
-                if i == 0 and not data_from_page:
-                    self._handle_feed_without_data(html_code)
-                    continue
+                    if i == 0 and not data_from_page:
+                        self._handle_feed_without_data(html_code)
+                        continue
 
-                if i == 0:
-                    search_core = data_from_page.get("searchCore") or {}
-                    context = data_from_page.get("context")
+                    if i == 0:
+                        search_core = data_from_page.get("searchCore") or {}
+                        context = data_from_page.get("context")
 
-                    api_params = build_api_params(search_core)
+                        api_params = build_api_params(search_core)
 
                 try:
-                    if i == 0:
+                    if api_url:
+                        catalog = json_data.get("catalog") or json_data.get("result", {}).get("catalog") or {}
+                    elif i == 0:
                         catalog = data_from_page.get("catalog") or {}
                     else:
                         catalog = json_data.get("catalog") or json_data.get("result", {}).get("catalog") or {}
@@ -484,6 +510,7 @@ def _resolve_runtime_config(
         rent_urls.extend(base.urls or [])
 
     sale_urls: list[str] = []
+    sale_snap = None
     if rc_sale is not None:
         try:
             sale_snap = asyncio.run(rc_sale.get())
@@ -503,6 +530,18 @@ def _resolve_runtime_config(
     runtime = copy.copy(base)
     if rent_urls or sale_urls:
         runtime.urls = [*rent_urls, *sale_urls]
+
+    api_urls: dict[str, str] = {}
+    if rent_snap.mobile_mode and rent_snap.api_search_url:
+        for u in rent_urls:
+            api_urls[u] = rent_snap.api_search_url
+
+    if sale_urls and sale_snap is not None and sale_snap.mobile_mode and sale_snap.api_search_url:
+        for u in sale_urls:
+            api_urls[u] = sale_snap.api_search_url
+
+    runtime.api_urls = api_urls
+    runtime.mobile_mode = bool(api_urls)
 
     if rent_snap.proxy_string:
         runtime.proxy_string = rent_snap.proxy_string

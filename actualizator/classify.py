@@ -14,6 +14,16 @@ AVITO_ALIVE_MARKERS = (
     "item-view/item-price",
 )
 
+AVITO_MOBILE_NOT_FOUND_MARKERS = (
+    "itemCardRedirect",
+    '\\"isError\\":true',
+)
+
+AVITO_MOBILE_ALIVE_MARKERS = (
+    "galleryConfig",
+    "anonymousNumber",
+)
+
 CIAN_OFFER_STATUS = re.compile(r'"offerData":\{"offer":\{[^}]{0,400}?"status":"([a-zA-Z_]+)"')
 CIAN_ALIVE_STATUS = "published"
 CIAN_REMOVED_TEXT = "Объявление снято с публикации"
@@ -22,11 +32,14 @@ YANDEX_SSR_FAIL = re.compile(r"_ssr_fail_status_code=(\d+)")
 YANDEX_ALIVE_MARKER = "<title"
 
 
-def classify_avito(body: str) -> str:
-    if any(marker in body for marker in AVITO_NOT_FOUND_MARKERS):
+def classify_avito(body: str, mobile: bool = False) -> str:
+    not_found = AVITO_MOBILE_NOT_FOUND_MARKERS if mobile else AVITO_NOT_FOUND_MARKERS
+    alive = AVITO_MOBILE_ALIVE_MARKERS if mobile else AVITO_ALIVE_MARKERS
+
+    if any(marker in body for marker in not_found):
         return "not_found"
 
-    if any(marker in body for marker in AVITO_ALIVE_MARKERS):
+    if any(marker in body for marker in alive):
         return "alive"
 
     return "blocked"
@@ -67,7 +80,7 @@ NOT_FOUND_CODES = {
 }
 
 
-def classify(source: str, status: int, body: str) -> str:
+def classify(source: str, status: int, body: str, mobile: bool = False) -> str:
     detector = DETECTORS.get(source)
 
     if detector is None:
@@ -81,5 +94,8 @@ def classify(source: str, status: int, body: str) -> str:
 
     if status != 200:
         return "error"
+
+    if source == "avito":
+        return classify_avito(body, mobile=mobile)
 
     return detector(body)

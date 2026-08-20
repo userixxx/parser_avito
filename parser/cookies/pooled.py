@@ -23,6 +23,7 @@ class PooledCookiesProvider(CookiesProvider):
     ):
         self.api_url = api_url.rstrip("/")
         self.token = token
+        self.fingerprint: dict = {}
         self.city = city
         self.fallback = fallback
         self.storage_path = Path(storage_path)
@@ -122,6 +123,11 @@ class PooledCookiesProvider(CookiesProvider):
 
         self.cookie_id = data.get("cookie_id")
         self.current_cookies = data.get("cookies")
+        self.fingerprint = {
+            "impersonate": data.get("impersonate"),
+            "user_agent": data.get("user_agent"),
+            "headers": data.get("headers") or {},
+        }
 
         if not self.cookie_id or not self.current_cookies:
             logger.warning(f"Пул вернул неполные данные: {data}")
@@ -129,9 +135,15 @@ class PooledCookiesProvider(CookiesProvider):
             self.current_cookies = None
             return None
 
-        logger.info(f"Получена кука из пула | cookie_id={self.cookie_id}")
+        logger.info(
+            f"Получена кука из пула | cookie_id={self.cookie_id} "
+            f"type={data.get('type')} imp={self.fingerprint['impersonate']}"
+        )
         self._save_to_disk()
         return self.current_cookies
+
+    def get_fingerprint(self) -> dict:
+        return self.fingerprint
 
     def _report(self, ok: bool, status_code: int | None) -> bool:
         try:

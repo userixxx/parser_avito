@@ -15,6 +15,15 @@ def _float(name: str, default: float) -> float:
         return default
 
 
+def _bool(name: str, default: bool) -> bool:
+    value = os.getenv(name)
+
+    if value is None:
+        return default
+
+    return value.strip().lower() in ("1", "true", "yes", "on")
+
+
 def _floats(name: str, default: str) -> list[float]:
     values = []
 
@@ -51,6 +60,8 @@ class Settings:
         self.halt_sleep = _float("ACTUALIZER_HALT_SLEEP", 3600.0)
         self.no_cookie_sleep = _float("ACTUALIZER_NO_COOKIE_SLEEP", 600.0)
         self.equipment_city = os.getenv("ACTUALIZER_EQUIPMENT_CITY", "global")
+        self.avito_mobile = _bool("ACTUALIZER_AVITO_MOBILE", False)
+        self.avito_mobile_host = os.getenv("ACTUALIZER_AVITO_MOBILE_HOST", "m.avito.ru")
         self.storage_dir = os.getenv("ACTUALIZER_STORAGE", "storage")
 
     @property

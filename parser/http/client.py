@@ -11,6 +11,7 @@ from parser.proxies.proxy import Proxy
 
 BLOCK_CODES = (401, 403, 429)
 FEED_MARKERS = ("loaderData", '"items"')
+UNSAFE_HEADERS = ("host", "content-length", "connection", "accept-encoding", "cookie")
 
 
 class HttpClient:
@@ -152,12 +153,50 @@ class HttpClient:
         )
         return True
 
+    @staticmethod
+    def _known_impersonate(value: str | None) -> str | None:
+        if not value:
+            return None
+
+        try:
+            from curl_cffi.requests import BrowserType
+            supported = {profile.value for profile in BrowserType}
+        except Exception:
+            return None
+
+        if value in supported:
+            return value
+
+        logger.warning(f"Отпечаток {value} не поддерживается curl_cffi — берём случайный")
+        return None
+
+    def _provider_fingerprint(self) -> tuple[str | None, str | None, dict]:
+        getter = getattr(self.cookies, "get_fingerprint", None)
+
+        if getter is None:
+            return None, None, {}
+
+        fingerprint = getter() or {}
+
+        return (
+            self._known_impersonate(fingerprint.get("impersonate")),
+            fingerprint.get("user_agent"),
+            fingerprint.get("headers") or {},
+        )
+
     def request(self, method: str, url: str, **kwargs):
         last_exc = None
 
         for attempt in range(1, self.max_retries + 1):
             try:
-                with self._build_client() as client:
+                impersonate, user_agent, extra_headers = self._provider_fingerprint()
+
+                with self._build_client(impersonate, user_agent) as client:
+                    if extra_headers:
+                        client.headers.update(
+                            {name: value for name, value in extra_headers.items()
+                             if name.lower() not in UNSAFE_HEADERS}
+                        )
 
                     if self.cookies:
                         kwargs.setdefault("cookies", self.cookies.get())

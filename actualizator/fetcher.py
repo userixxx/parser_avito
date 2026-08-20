@@ -90,6 +90,14 @@ class Fetcher:
             f"кука слота {self.cookie_slot}: id={leased.get('cookie_id')} "
             f"type={leased.get('type')} imp={leased.get('impersonate')}"
         )
+
+        if self.settings.avito_mobile and leased.get("type") != "mobile":
+            logger.warning(
+                f"мобильный режим включён, а пул отдал куку типа {leased.get('type')} — "
+                f"карточки {self.settings.avito_mobile_host} её не примут, "
+                f"нужен AVITO_COOKIE_TYPE_OVERRIDES={self.cookie_slot}:mobile"
+            )
+
         return leased
 
     def _ensure_cookie(self) -> dict | None:
@@ -158,6 +166,12 @@ class Fetcher:
         finally:
             response.close()
 
+    def _target_url(self, url: str, source: str) -> str:
+        if source != "avito" or not self.settings.avito_mobile:
+            return url
+
+        return url.replace("://www.avito.ru", f"://{self.settings.avito_mobile_host}", 1)
+
     def fetch(self, url: str, source: str) -> tuple[int, str]:
         if self.profile(source)["cookie"] and self._ensure_cookie() is None:
             logger.warning(
@@ -168,9 +182,11 @@ class Fetcher:
             self.batch_interrupted = True
             return 0, ""
 
+        target = self._target_url(url, source)
+
         for attempt in range(1, self.settings.net_retries + 1):
             try:
-                status, body = self._get(url, source, self.cookie)
+                status, body = self._get(target, source, self.cookie)
                 self.last_status = status
                 return status, body
             except Exception as err:
@@ -185,7 +201,8 @@ class Fetcher:
 
     def check(self, url: str, source: str) -> tuple[str, int]:
         status, body = self.fetch(url, source)
-        result = classify(source, status, body) if status else "error"
+        mobile = source == "avito" and self.settings.avito_mobile
+        result = classify(source, status, body, mobile=mobile) if status else "error"
 
         if result == "blocked":
             self.consecutive_blocks += 1

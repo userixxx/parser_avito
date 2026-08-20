@@ -47,6 +47,9 @@ class AvitoConfig:
     use_webdriver: bool = True
     use_bypass_api: bool = False
     use_cookie_pool: bool = False
+    mobile_mode: bool = False
+    api_urls: dict = field(default_factory=dict)
+    mobile_timeout: int = 90
     cookies_api_key: str = None
     output_dir: Path = Path("result")
     use_own_cookies: bool = False
