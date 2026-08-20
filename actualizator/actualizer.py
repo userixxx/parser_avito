@@ -78,6 +78,7 @@ def run() -> int:
 
         results = []
         parsed = 0
+        fetcher.start_batch()
 
         for task in tasks:
             source = task.get("source") or "avito"
@@ -92,6 +93,14 @@ def run() -> int:
             })
 
             logger.info(f"[{task['listing_id']}] {source}/{task['city']} http={status} {result}")
+
+            if fetcher.batch_interrupted:
+                logger.warning(
+                    f"остаток пачки ({len(tasks) - len(results)} задач) не трогаем — "
+                    f"аренда истечёт и они вернутся в очередь"
+                )
+                break
+
             fetcher.pause()
 
         core.report(results)
@@ -100,6 +109,8 @@ def run() -> int:
             heartbeat.ok({"checked": len(results), "parsed": parsed})
         else:
             heartbeat.fail("ни одна карточка не разобрана", {"checked": len(results)})
+
+        fetcher.cooldown()
 
 
 if __name__ == "__main__":

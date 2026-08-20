@@ -52,12 +52,45 @@ class CoreClient:
         logger.info(f"report принят: {res.json().get('accepted')}")
         return True
 
-    def lease_cookie(self, city: str) -> dict | None:
+    def change_equipment(self, source: str, city: str, reason: str) -> bool:
+        try:
+            res = requests.post(
+                f"{self.api_url}/api/internal/proxy/change-equipment",
+                headers=self.headers,
+                json={"source": source, "city": city, "reason": reason},
+                timeout=120.0,
+            )
+        except requests.RequestException as err:
+            logger.warning(f"смена оборудования не удалась: {err}")
+            return False
+
+        if not res.ok:
+            logger.warning(f"смена оборудования вернула {res.status_code} {res.text[:200]}")
+            return False
+
+        try:
+            payload = res.json()
+        except ValueError:
+            return False
+
+        if payload.get("ok"):
+            logger.warning(f"оборудование прокси сменено, новый IP {payload.get('ip', '?')}")
+            return True
+
+        logger.warning(f"core отказал в смене оборудования: {payload.get('error', '?')}")
+        return False
+
+    def lease_cookie(self, city: str, exclude_id: int | None = None) -> dict | None:
+        params = {"city": city}
+
+        if exclude_id:
+            params["exclude"] = exclude_id
+
         try:
             res = requests.get(
                 f"{self.api_url}/api/internal/avito/cookies/lease",
                 headers=self.headers,
-                params={"city": city},
+                params=params,
                 timeout=self.timeout,
             )
         except requests.RequestException as err:
