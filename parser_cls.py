@@ -68,7 +68,7 @@ class AvitoParse:
             timeout=config.mobile_timeout if config.mobile_mode else config.timeout,
             max_retries=config.mobile_max_retry if config.mobile_mode else self.config.max_count_of_retry,
             retry_delay=config.retry_delay,
-            block_threshold=config.block_threshold,
+            block_threshold=config.mobile_block_threshold if config.mobile_mode else config.block_threshold,
             on_subnet_block=self._on_subnet_block,
         )
         self.removed_ids = self._build_removed_ids_cache()

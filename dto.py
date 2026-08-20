@@ -51,6 +51,7 @@ class AvitoConfig:
     api_urls: dict = field(default_factory=dict)
     mobile_timeout: int = 90
     mobile_max_retry: int = 2
+    mobile_block_threshold: int = 2
     cookies_api_key: str = None
     output_dir: Path = Path("result")
     use_own_cookies: bool = False
