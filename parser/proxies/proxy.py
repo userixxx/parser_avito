@@ -1,5 +1,7 @@
+import hashlib
 import time
 from abc import ABC, abstractmethod
+from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
 
 import requests
@@ -98,13 +100,33 @@ class MobileProxy(Proxy):
         self._notify_failure(reason)
         return False
 
+    def _stamp_path(self) -> Path:
+        digest = hashlib.sha1(self.change_ip_url.encode()).hexdigest()[:12]
+        return Path("storage") / f"last_rotation_{digest}"
+
     def _seconds_since_rotation(self) -> float:
         last = self._last_rotation_at.get(self.change_ip_url)
-        return self.cooldown if last is None else time.monotonic() - last
+
+        if last is not None:
+            return time.monotonic() - last
+
+        try:
+            stamp = float(self._stamp_path().read_text().strip())
+        except (OSError, ValueError):
+            return self.cooldown
+
+        return max(0.0, time.time() - stamp)
 
     def _remember_rotation(self, index: int) -> None:
         self._preferred_channel[self.change_ip_url] = index
         self._last_rotation_at[self.change_ip_url] = time.monotonic()
+
+        try:
+            path = self._stamp_path()
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(str(time.time()))
+        except OSError as err:
+            logger.warning(f"Не удалось сохранить метку ротации: {err}")
 
     def _order(self, preferred: int | None) -> list[int]:
         indexes = list(range(len(self.channels)))
