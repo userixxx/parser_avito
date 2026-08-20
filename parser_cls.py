@@ -66,7 +66,7 @@ class AvitoParse:
             proxy=self.proxy,
             cookies=self.cookies_provider,
             timeout=config.mobile_timeout if config.mobile_mode else config.timeout,
-            max_retries=self.config.max_count_of_retry,
+            max_retries=config.mobile_max_retry if config.mobile_mode else self.config.max_count_of_retry,
             retry_delay=config.retry_delay,
             block_threshold=config.block_threshold,
             on_subnet_block=self._on_subnet_block,
