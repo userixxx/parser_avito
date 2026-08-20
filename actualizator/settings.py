@@ -63,7 +63,7 @@ class Settings:
         self.avito_mobile = _bool("ACTUALIZER_AVITO_MOBILE", False)
         self.avito_mobile_host = os.getenv("ACTUALIZER_AVITO_MOBILE_HOST", "m.avito.ru")
         self.mobile_rotate_pause = _float("ACTUALIZER_MOBILE_ROTATE_PAUSE", 20.0)
-        self.mobile_rotate_cooldown = _int("ACTUALIZER_MOBILE_ROTATE_COOLDOWN", 45)
+        self.mobile_rotate_cooldown = _int("ACTUALIZER_MOBILE_ROTATE_COOLDOWN", 300)
         self.storage_dir = os.getenv("ACTUALIZER_STORAGE", "storage")
 
     @property
