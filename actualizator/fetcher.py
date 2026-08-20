@@ -348,8 +348,14 @@ class Fetcher:
             return False
 
         elapsed = time.time() - self.last_rotate_at
-        if elapsed < self.settings.rotate_cooldown:
-            wait = self.settings.rotate_cooldown - elapsed
+        cooldown = (
+            self.settings.mobile_rotate_cooldown
+            if self.settings.avito_mobile
+            else self.settings.rotate_cooldown
+        )
+
+        if elapsed < cooldown:
+            wait = cooldown - elapsed
             logger.info(f"кулдаун ротации: ждём {wait:.0f}с")
             time.sleep(wait)
 
