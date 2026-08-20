@@ -62,6 +62,7 @@ class Settings:
         self.equipment_city = os.getenv("ACTUALIZER_EQUIPMENT_CITY", "global")
         self.avito_mobile = _bool("ACTUALIZER_AVITO_MOBILE", False)
         self.avito_mobile_host = os.getenv("ACTUALIZER_AVITO_MOBILE_HOST", "m.avito.ru")
+        self.mobile_rotate_pause = _float("ACTUALIZER_MOBILE_ROTATE_PAUSE", 20.0)
         self.storage_dir = os.getenv("ACTUALIZER_STORAGE", "storage")
 
     @property

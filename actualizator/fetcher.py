@@ -235,6 +235,17 @@ class Fetcher:
         )
 
     def _escalation_plan(self) -> list[tuple[str, float]]:
+        if self.settings.avito_mobile:
+            return [
+                (ACTION_ROTATE_IP, self.settings.mobile_rotate_pause),
+                (ACTION_ROTATE_IP, self.settings.mobile_rotate_pause),
+                (ACTION_SWAP_COOKIE, 0.0),
+                (ACTION_ROTATE_IP, self.settings.mobile_rotate_pause),
+                (ACTION_BACKOFF, self.settings.backoff_ladder[0]),
+                (ACTION_CHANGE_EQUIPMENT, self.settings.equipment_pause),
+                (ACTION_HALT, self.settings.halt_sleep),
+            ]
+
         plan = [(ACTION_BACKOFF, pause) for pause in self.settings.backoff_ladder]
         plan.append((ACTION_SWAP_COOKIE, 0.0))
         plan.append((ACTION_ROTATE_IP, self.settings.rotate_pause))
