@@ -14,8 +14,8 @@ def build_proxy(config: AvitoConfig, on_rotation_failed=None) -> Proxy:
         logger.info("Прокси определен как мобильный")
         kwargs = {}
         if getattr(config, "mobile_mode", False):
-            kwargs["cooldown"] = config.mobile_rotate_cooldown
-            logger.info(f"Мобильный режим: ротация IP не чаще раза в {config.mobile_rotate_cooldown}с")
+            kwargs["cooldown"] = resolve_rotate_cooldown(config.mobile_rotate_cooldown)
+            logger.info(f"Мобильный режим: ротация IP не чаще раза в {kwargs['cooldown']}с")
 
         return MobileProxy(
             config.proxy_string,
@@ -30,6 +30,19 @@ def build_proxy(config: AvitoConfig, on_rotation_failed=None) -> Proxy:
         return ServerProxy(config.proxy_string)
 
     return NoProxy()
+
+
+def resolve_rotate_cooldown(fallback: int) -> int:
+    raw = os.getenv("AVITO_MOBILE_ROTATE_COOLDOWN")
+
+    if not raw:
+        return fallback
+
+    try:
+        return max(0, int(raw))
+    except ValueError:
+        logger.warning(f"AVITO_MOBILE_ROTATE_COOLDOWN={raw!r} не число, беру {fallback}с")
+        return fallback
 
 
 def resolve_api_proxy() -> str | None:

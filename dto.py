@@ -52,7 +52,7 @@ class AvitoConfig:
     mobile_timeout: int = 90
     mobile_max_retry: int = 2
     mobile_block_threshold: int = 2
-    mobile_rotate_cooldown: int = 600
+    mobile_rotate_cooldown: int = 120
     cookies_api_key: str = None
     output_dir: Path = Path("result")
     use_own_cookies: bool = False
