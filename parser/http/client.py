@@ -1,8 +1,10 @@
 """
 Клиент для запросов парсера (curl_cffi)
 """
+import hashlib
 import random
 import time
+from pathlib import Path
 from curl_cffi import requests
 from loguru import logger
 
@@ -12,6 +14,7 @@ from parser.proxies.proxy import Proxy
 BLOCK_CODES = (401, 403, 429)
 FEED_MARKERS = ("loaderData", '"items"')
 UNSAFE_HEADERS = ("host", "content-length", "connection", "accept-encoding", "cookie")
+BLOCK_EVENTS_TTL = 1800
 
 
 class HttpClient:
@@ -39,6 +42,43 @@ class HttpClient:
         self._block_limit_events = 0
         self._last_impersonate = None
         self._last_user_agent = None
+
+    def _block_events_path(self) -> Path | None:
+        change_ip_url = getattr(self.proxy, "change_ip_url", None)
+
+        if not change_ip_url:
+            return None
+
+        digest = hashlib.sha1(change_ip_url.encode()).hexdigest()[:12]
+
+        return Path("storage") / f"block_events_{digest}"
+
+    def _read_block_events(self) -> int:
+        path = self._block_events_path()
+
+        if path is None:
+            return self._block_limit_events
+
+        try:
+            count, stamp = path.read_text().split()
+            if time.time() - float(stamp) > BLOCK_EVENTS_TTL:
+                return 0
+            return int(count)
+        except (OSError, ValueError):
+            return 0
+
+    def _store_block_events(self, value: int) -> None:
+        self._block_limit_events = value
+        path = self._block_events_path()
+
+        if path is None:
+            return
+
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(f"{value} {time.time()}")
+        except OSError as err:
+            logger.warning(f"Не удалось сохранить счётчик блокировок: {err}")
 
     def _build_client(
         self,
@@ -231,14 +271,16 @@ class HttpClient:
                         self.proxy.handle_block()
                         self._block_attempts = 0
 
-                        self._block_limit_events += 1
-                        if self.on_subnet_block and self._block_limit_events >= self.equip_after:
+                        events = self._read_block_events() + 1
+                        self._store_block_events(events)
+
+                        if self.on_subnet_block and events >= self.equip_after:
                             logger.warning("Смена IP не помогает (subnet-блок), запрашиваю смену оборудования")
                             try:
                                 self.on_subnet_block()
                             except Exception as e:
                                 logger.warning(f"on_subnet_block error: {e}")
-                            self._block_limit_events = 0
+                            self._store_block_events(0)
 
                     time.sleep(self.retry_delay)
                     continue
@@ -246,7 +288,7 @@ class HttpClient:
                 # === успех ===
                 response.raise_for_status()
                 self._block_attempts = 0
-                self._block_limit_events = 0
+                self._store_block_events(0)
                 return response
 
             except requests.RequestsError as e:

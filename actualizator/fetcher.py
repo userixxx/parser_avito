@@ -238,8 +238,8 @@ class Fetcher:
         if self.settings.avito_mobile:
             return [
                 (ACTION_ROTATE_IP, self.settings.mobile_rotate_pause),
-                (ACTION_ROTATE_IP, self.settings.mobile_rotate_pause),
                 (ACTION_SWAP_COOKIE, 0.0),
+                (ACTION_CHANGE_EQUIPMENT, self.settings.equipment_pause),
                 (ACTION_ROTATE_IP, self.settings.mobile_rotate_pause),
                 (ACTION_BACKOFF, self.settings.backoff_ladder[0]),
                 (ACTION_CHANGE_EQUIPMENT, self.settings.equipment_pause),
@@ -281,7 +281,7 @@ class Fetcher:
             if self._swap_blocked_cookie():
                 self.escalation_step = 0
                 return
-            self._sleep_off(self.settings.backoff_ladder[-1], "сменить куку не вышло — ждём")
+            self._sleep_off(self.settings.backoff_ladder[0], "кука не виновата — идём дальше по лестнице")
             return
 
         if action == ACTION_ROTATE_IP:
