@@ -30,7 +30,7 @@ def run() -> int:
         logger.error("PVZ_API_TOKEN не задан — актуализатор не может работать")
         return 1
 
-    core = CoreClient(settings.core_api_url, settings.api_token)
+    core = CoreClient(settings.core_api_url, settings.api_token, purchase_timeout=settings.cookie_purchase_timeout)
     config = RemoteConfig(
         source="actualizer",
         city=settings.config_city,

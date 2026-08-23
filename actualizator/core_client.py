@@ -3,9 +3,10 @@ from loguru import logger
 
 
 class CoreClient:
-    def __init__(self, api_url: str, token: str, timeout: float = 30.0):
+    def __init__(self, api_url: str, token: str, timeout: float = 30.0, purchase_timeout: float = 150.0):
         self.api_url = api_url.rstrip("/")
         self.timeout = timeout
+        self.purchase_timeout = purchase_timeout
         self.headers = {"X-Api-Key": token, "Content-Type": "application/json"}
 
     def lease(self, limit: int) -> list[dict]:
@@ -91,7 +92,7 @@ class CoreClient:
                 f"{self.api_url}/api/internal/avito/cookies/lease",
                 headers=self.headers,
                 params=params,
-                timeout=self.timeout,
+                timeout=self.purchase_timeout,
             )
         except requests.RequestException as err:
             logger.warning(f"кука недоступна: {err}")
@@ -103,6 +104,43 @@ class CoreClient:
 
         if not res.ok:
             logger.warning(f"пул кук вернул {res.status_code}")
+            return None
+
+        try:
+            data = res.json()
+        except ValueError:
+            return None
+
+        if not data.get("cookies"):
+            return None
+
+        return data
+
+    def replace_cookie(self, slot: str, dead_ids: list[int], reason: str) -> dict | None:
+        try:
+            res = requests.post(
+                f"{self.api_url}/api/internal/avito/cookies/replace",
+                headers=self.headers,
+                json={"slot": slot, "cookie_ids": dead_ids, "reason": reason},
+                timeout=self.purchase_timeout,
+            )
+        except requests.RequestException as err:
+            logger.warning(f"замена куки не удалась: {err}")
+            return None
+
+        if res.status_code == 429:
+            try:
+                payload = res.json()
+            except ValueError:
+                payload = {}
+            logger.warning(
+                f"core отказал в замене куки: {payload.get('error', '?')} "
+                f"retry_after={payload.get('retry_after', '?')}с"
+            )
+            return None
+
+        if not res.ok:
+            logger.warning(f"замена куки вернула {res.status_code} {res.text[:200]}")
             return None
 
         try:

@@ -64,6 +64,10 @@ class Settings:
         self.avito_mobile_host = os.getenv("ACTUALIZER_AVITO_MOBILE_HOST", "m.avito.ru")
         self.mobile_rotate_pause = _float("ACTUALIZER_MOBILE_ROTATE_PAUSE", 20.0)
         self.mobile_rotate_cooldown = _int("ACTUALIZER_MOBILE_ROTATE_COOLDOWN", 300)
+        self.mobile_backoff_long = _float("ACTUALIZER_MOBILE_BACKOFF_LONG", 300.0)
+        self.mobile_halt_sleep = _float("ACTUALIZER_MOBILE_HALT_SLEEP", 900.0)
+        self.cookie_stale_seconds = _float("ACTUALIZER_COOKIE_STALE_MINUTES", 30.0) * 60
+        self.cookie_purchase_timeout = _float("ACTUALIZER_COOKIE_PURCHASE_TIMEOUT", 150.0)
         self.storage_dir = os.getenv("ACTUALIZER_STORAGE", "storage")
 
     @property

@@ -63,6 +63,7 @@ class Fetcher:
         self.batch_interrupted = False
         self.cookie_starved = False
         self.last_blocked: tuple[str, str] | None = None
+        self.last_success_at = time.time()
 
     def apply_config(self, proxy_string: str | None, change_ip_url: str | None) -> None:
         self.proxy_string = proxy_string
@@ -211,6 +212,7 @@ class Fetcher:
         elif result in ("alive", "not_found"):
             self.consecutive_blocks = 0
             self.escalation_step = 0
+            self.last_success_at = time.time()
             if self.cookie and self.profile(source)["cookie"]:
                 self.core.report_cookie(self.cookie["cookie_id"], True, status)
         else:
@@ -239,11 +241,10 @@ class Fetcher:
             return [
                 (ACTION_ROTATE_IP, self.settings.mobile_rotate_pause),
                 (ACTION_SWAP_COOKIE, 0.0),
-                (ACTION_CHANGE_EQUIPMENT, self.settings.equipment_pause),
-                (ACTION_ROTATE_IP, self.settings.mobile_rotate_pause),
                 (ACTION_BACKOFF, self.settings.backoff_ladder[0]),
-                (ACTION_CHANGE_EQUIPMENT, self.settings.equipment_pause),
-                (ACTION_HALT, self.settings.halt_sleep),
+                (ACTION_ROTATE_IP, self.settings.mobile_rotate_pause),
+                (ACTION_BACKOFF, self.settings.mobile_backoff_long),
+                (ACTION_HALT, self.settings.mobile_halt_sleep),
             ]
 
         plan = [(ACTION_BACKOFF, pause) for pause in self.settings.backoff_ladder]
@@ -318,20 +319,21 @@ class Fetcher:
         spare = self._lease_cookie(current_id)
 
         if spare is None:
-            logger.info("второй куки в пуле нет — обвинить куку нечем, идём дальше по лестнице")
-            return False
+            logger.info("второй куки в пуле нет — обвинить куку нечем")
+            return self._replace_worn_cookie([current_id])
 
         try:
             status, body = self._get(url, source, spare)
         except Exception as err:
             logger.warning(f"проба второй кукой не удалась: {str(err)[:120]}")
-            return False
+            return self._replace_worn_cookie([current_id])
 
         verdict = classify(source, status, body) if status else "error"
 
         if verdict not in ("alive", "not_found"):
             logger.warning(f"дискриминатор: вторая кука тоже {verdict} ({status}) — виновата не кука")
-            return False
+            worn = [current_id, spare["cookie_id"]] if verdict == "blocked" else [current_id]
+            return self._replace_worn_cookie(worn)
 
         logger.warning(
             f"дискриминатор: вторая кука {spare.get('cookie_id')} отдала {verdict} — "
@@ -340,6 +342,34 @@ class Fetcher:
         self.core.report_cookie(current_id, False, self.last_status)
         self.core.report_cookie(spare["cookie_id"], True, status)
         self.cookie = spare
+
+        return True
+
+    def _replace_worn_cookie(self, worn_ids: list[int]) -> bool:
+        idle = time.time() - self.last_success_at
+
+        if idle < self.settings.cookie_stale_seconds:
+            logger.info(
+                f"простой {idle / 60:.0f} мин меньше порога "
+                f"{self.settings.cookie_stale_seconds / 60:.0f} мин — куку не меняем"
+            )
+            return False
+
+        fresh = self.core.replace_cookie(
+            self.cookie_slot,
+            worn_ids,
+            f"нет успешных проверок {idle / 60:.0f} мин, куки {worn_ids} изношены",
+        )
+
+        if fresh is None:
+            return False
+
+        logger.warning(
+            f"куплена свежая кука {fresh.get('cookie_id')} взамен {worn_ids} — "
+            f"простой был {idle / 60:.0f} мин"
+        )
+        self.cookie = fresh
+        self.last_success_at = time.time()
 
         return True
 
