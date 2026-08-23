@@ -81,11 +81,14 @@ class CoreClient:
         logger.warning(f"core отказал в смене оборудования: {payload.get('error', '?')}")
         return False
 
-    def lease_cookie(self, city: str, exclude_id: int | None = None) -> dict | None:
+    def lease_cookie(self, city: str, exclude_id: int | None = None, allow_purchase: bool = True) -> dict | None:
         params = {"city": city}
 
         if exclude_id:
             params["exclude"] = exclude_id
+
+        if not allow_purchase:
+            params["buy"] = 0
 
         try:
             res = requests.get(

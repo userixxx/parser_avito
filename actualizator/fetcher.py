@@ -81,8 +81,8 @@ class Fetcher:
             url = f"http://{url}"
         return {"http": url, "https": url}
 
-    def _lease_cookie(self, exclude_id: int | None = None) -> dict | None:
-        leased = self.core.lease_cookie(self.cookie_slot, exclude_id)
+    def _lease_cookie(self, exclude_id: int | None = None, allow_purchase: bool = True) -> dict | None:
+        leased = self.core.lease_cookie(self.cookie_slot, exclude_id, allow_purchase)
 
         if leased is None:
             return None
@@ -316,7 +316,7 @@ class Fetcher:
             return False
 
         current_id = self.cookie["cookie_id"]
-        spare = self._lease_cookie(current_id)
+        spare = self._lease_cookie(current_id, allow_purchase=False)
 
         if spare is None:
             logger.info("второй куки в пуле нет — обвинить куку нечем")
