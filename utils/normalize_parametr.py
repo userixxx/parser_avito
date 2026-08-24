@@ -5,11 +5,17 @@ def normalize_params(params_dict: dict) -> dict:
         if not values:
             continue
 
-        # если список
-        if isinstance(values, list):
-            for i, v in enumerate(values):
-                # чаще всего работает без индекса
-                result[f'params[{key}]'] = str(v)
+        if isinstance(values, dict):
+            for sub_key, sub_value in values.items():
+                if not sub_value:
+                    continue
+                result[f'params[{key}][{sub_key}]'] = str(sub_value)
+
+        elif isinstance(values, (list, tuple)):
+            for index, value in enumerate(values):
+                if not value:
+                    continue
+                result[f'params[{key}][{index}]'] = str(value)
 
         else:
             result[f'params[{key}]'] = str(values)

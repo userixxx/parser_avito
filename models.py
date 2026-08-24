@@ -34,7 +34,7 @@ class PriceDetailed(BaseModel):
     titleDative: str
     value: int
     wasLowered: bool
-    exponent: str
+    exponent: Optional[str] = None
 
 
 class Image(RootModel):
