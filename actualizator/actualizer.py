@@ -110,6 +110,7 @@ def run() -> int:
         else:
             heartbeat.fail("ни одна карточка не разобрана", {"checked": len(results)})
 
+        fetcher.periodic_repair()
         fetcher.cooldown()
 
 

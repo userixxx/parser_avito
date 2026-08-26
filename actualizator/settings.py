@@ -68,6 +68,13 @@ class Settings:
         self.mobile_halt_sleep = _float("ACTUALIZER_MOBILE_HALT_SLEEP", 900.0)
         self.cookie_stale_seconds = _float("ACTUALIZER_COOKIE_STALE_MINUTES", 15.0) * 60
         self.cookie_purchase_timeout = _float("ACTUALIZER_COOKIE_PURCHASE_TIMEOUT", 150.0)
+        self.repair_idle_seconds = _float("ACTUALIZER_REPAIR_IDLE_MINUTES", 10.0) * 60
+        self.repair_rotate_seconds = _float("ACTUALIZER_REPAIR_ROTATE_MINUTES", 12.0) * 60
+        self.repair_cookie_seconds = _float("ACTUALIZER_REPAIR_COOKIE_MINUTES", 30.0) * 60
+        self.repair_equipment_seconds = _float("ACTUALIZER_REPAIR_EQUIPMENT_MINUTES", 45.0) * 60
+        self.dead_channel_errors = _int("ACTUALIZER_DEAD_CHANNEL_ERRORS", 4)
+        self.dead_equipment_seconds = _float("ACTUALIZER_DEAD_EQUIPMENT_MINUTES", 15.0) * 60
+        self.mobileproxy_token = os.getenv("MOBILEPROXY_API_TOKEN", "")
         self.storage_dir = os.getenv("ACTUALIZER_STORAGE", "storage")
 
     @property

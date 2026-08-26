@@ -13,6 +13,7 @@ ROTATION_CHANNELS = (
     "https://changeip.mobileproxy.space/",
     "http://aproxy.site/",
 )
+MOBILEPROXY_API = "https://mobileproxy.space/api.html"
 
 SOURCE_PROFILES = {
     "avito": {"cookie": True, "read_limit": 1_200_000},
@@ -64,6 +65,12 @@ class Fetcher:
         self.cookie_starved = False
         self.last_blocked: tuple[str, str] | None = None
         self.last_success_at = time.time()
+        self.avito_success_at = time.time()
+        self.last_repair_at = 0.0
+        self.last_cookie_buy_at = time.time()
+        self.last_equipment_at = time.time()
+        self.consecutive_net_errors = 0
+        self.net_error_sources: set[str] = set()
 
     def apply_config(self, proxy_string: str | None, change_ip_url: str | None) -> None:
         self.proxy_string = proxy_string
@@ -205,6 +212,13 @@ class Fetcher:
         mobile = source == "avito" and self.settings.avito_mobile
         result = classify(source, status, body, mobile=mobile) if status else "error"
 
+        if status:
+            self.consecutive_net_errors = 0
+            self.net_error_sources.clear()
+        elif not self.cookie_starved:
+            self.consecutive_net_errors += 1
+            self.net_error_sources.add(source)
+
         if result == "blocked":
             self.consecutive_blocks += 1
             self.last_blocked = (url, source)
@@ -213,6 +227,8 @@ class Fetcher:
             self.consecutive_blocks = 0
             self.escalation_step = 0
             self.last_success_at = time.time()
+            if source == "avito":
+                self.avito_success_at = time.time()
             if self.cookie and self.profile(source)["cookie"]:
                 self.core.report_cookie(self.cookie["cookie_id"], True, status)
         else:
@@ -370,6 +386,148 @@ class Fetcher:
         )
         self.cookie = fresh
         self.last_success_at = time.time()
+        self.last_cookie_buy_at = time.time()
+
+        return True
+
+    def channel_looks_dead(self) -> bool:
+        limit = self.settings.dead_channel_errors
+
+        return limit > 0 and self.consecutive_net_errors >= limit
+
+    def periodic_repair(self) -> None:
+        if self.settings.repair_idle_seconds <= 0:
+            return
+
+        now = time.time()
+
+        if self.channel_looks_dead() and now - self.last_equipment_at >= self.settings.dead_equipment_seconds:
+            sources = ", ".join(sorted(self.net_error_sources)) or "?"
+            self._repair_equipment(
+                now,
+                True,
+                f"канал не отвечает: {self.consecutive_net_errors} сетевых ошибок подряд ({sources})",
+            )
+            return
+
+        if now - max(self.avito_success_at, self.last_repair_at) < self.settings.repair_idle_seconds:
+            return
+
+        idle = (now - self.avito_success_at) / 60
+
+        if now - self.last_equipment_at >= self.settings.repair_equipment_seconds:
+            self._repair_equipment(now, False, f"нет вердиктов Авито {idle:.0f} мин")
+            return
+
+        if now - self.last_cookie_buy_at >= self.settings.repair_cookie_seconds:
+            if self._repair_cookie(now, idle):
+                self.rotate_ip()
+                self.last_repair_at = time.time()
+                return
+            self.last_cookie_buy_at = now - self.settings.repair_cookie_seconds + 300
+
+        if now - self.last_rotate_at >= self.settings.repair_rotate_seconds:
+            logger.warning(f"ремонт: нет вердиктов Авито {idle:.0f} мин — меняем IP")
+            self.rotate_ip()
+            self.last_repair_at = time.time()
+
+    def _repair_cookie(self, now: float, idle: float) -> bool:
+        worn = [self.cookie["cookie_id"]] if self.cookie else []
+        fresh = self.core.replace_cookie(
+            self.cookie_slot,
+            worn,
+            f"ремонт актуализатора: нет вердиктов Авито {idle:.0f} мин",
+        )
+
+        if fresh is None:
+            return False
+
+        logger.warning(f"ремонт: куплена свежая кука {fresh.get('cookie_id')} взамен {worn} — меняем и IP")
+        self.cookie = fresh
+        self.last_cookie_buy_at = now
+        self.last_success_at = time.time()
+
+        return True
+
+    def _repair_equipment(self, now: float, blacklist: bool, reason: str) -> None:
+        logger.warning(f"ремонт: {reason} — меняем оборудование")
+        self.last_equipment_at = now
+        self.last_repair_at = now
+        self.consecutive_net_errors = 0
+        self.net_error_sources.clear()
+
+        if not self._change_equipment_direct(blacklist):
+            self.core.change_equipment("actualizer", self.settings.equipment_city, f"актуализатор: {reason}")
+
+        self._sleep_off(self.settings.equipment_pause, "оборудование сменено — выжидаем")
+        self.last_repair_at = time.time()
+
+    def _proxy_identity(self) -> tuple[int, int] | None:
+        if not self.settings.mobileproxy_token or not self.proxy_string:
+            return None
+
+        login = self.proxy_string.split("//")[-1].split(":")[0]
+
+        try:
+            response = requests.get(
+                MOBILEPROXY_API,
+                params={"command": "get_my_proxy"},
+                headers={"Authorization": f"Bearer {self.settings.mobileproxy_token}"},
+                timeout=40,
+            )
+            rows = response.json()
+        except Exception as err:
+            logger.warning(f"список прокси mobileproxy недоступен: {str(err)[:120]}")
+            return None
+
+        if isinstance(rows, dict):
+            rows = rows.get("list") or []
+
+        for row in rows:
+            if row.get("proxy_login") == login:
+                return int(row["proxy_id"]), int(row["id_city"])
+
+        logger.warning(f"прокси с логином {login} в аккаунте mobileproxy не найден")
+        return None
+
+    def _change_equipment_direct(self, blacklist: bool) -> bool:
+        identity = self._proxy_identity()
+
+        if identity is None:
+            return False
+
+        proxy_id, id_city = identity
+        params = {
+            "command": "change_equipment",
+            "proxy_id": proxy_id,
+            "id_city": id_city,
+            "check_after_change": "true",
+        }
+
+        if blacklist:
+            params["add_to_black_list"] = 1
+
+        try:
+            response = requests.get(
+                MOBILEPROXY_API,
+                params=params,
+                headers={"Authorization": f"Bearer {self.settings.mobileproxy_token}"},
+                timeout=180,
+            )
+            payload = response.json()
+        except Exception as err:
+            logger.warning(f"смена оборудования не удалась: {str(err)[:120]}")
+            return False
+
+        if payload.get("status") != "ok":
+            logger.warning(f"mobileproxy отказал в смене оборудования: {str(payload)[:160]}")
+            return False
+
+        checked = payload.get("checked") or {}
+        logger.warning(
+            f"оборудование прокси {proxy_id} сменено, новый IP {checked.get(str(proxy_id), '?')}, "
+            f"город {id_city}, блэклист {'да' if blacklist else 'нет'}"
+        )
 
         return True
 
