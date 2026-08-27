@@ -54,6 +54,8 @@ class Settings:
         self.block_limit = _int("ACTUALIZER_BLOCK_LIMIT", 3)
         self.rotate_cooldown = _int("ACTUALIZER_ROTATE_COOLDOWN", 120)
         self.net_retries = _int("ACTUALIZER_NET_RETRIES", 3)
+        self.block_retries = _int("ACTUALIZER_BLOCK_RETRIES", 5)
+        self.block_retry_pause = _float("ACTUALIZER_BLOCK_RETRY_PAUSE", 5.0)
         self.backoff_ladder = _floats("ACTUALIZER_BACKOFF_LADDER", "60,180,600,1800")
         self.rotate_pause = _float("ACTUALIZER_ROTATE_PAUSE", 120.0)
         self.equipment_pause = _float("ACTUALIZER_EQUIPMENT_PAUSE", 300.0)

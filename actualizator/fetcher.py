@@ -6,9 +6,10 @@ from curl_cffi import requests as cffi
 from curl_cffi.requests import BrowserType
 from loguru import logger
 
-from actualizator.classify import classify
+from actualizator.classify import BLOCK_CODES, classify
 
-DEFAULT_IMPERSONATE = "edge99"
+IMPERSONATE_POOL = ("tor", "edge", "firefox", "safari")
+CHROME_VERSION_RANGE = (140, 147)
 ROTATION_CHANNELS = (
     "https://changeip.mobileproxy.space/",
     "http://aproxy.site/",
@@ -44,8 +45,18 @@ def known_impersonate(value: str | None) -> str | None:
     if value in supported:
         return value
 
-    logger.warning(f"отпечаток {value} не поддерживается curl_cffi — остаёмся на {DEFAULT_IMPERSONATE}")
+    logger.warning(f"отпечаток {value} не поддерживается curl_cffi — берём случайный из пула")
     return None
+
+
+def random_user_agent() -> str:
+    version = random.randint(*CHROME_VERSION_RANGE)
+
+    return (
+        f"Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        f"AppleWebKit/537.36 (KHTML, like Gecko) "
+        f"Chrome/{version}.0.0.0 Safari/537.36"
+    )
 
 
 class Fetcher:
@@ -140,12 +151,16 @@ class Fetcher:
         kwargs = {
             "proxies": self._proxies(),
             "timeout": self.settings.request_timeout,
-            "impersonate": DEFAULT_IMPERSONATE,
+            "impersonate": random.choice(IMPERSONATE_POOL),
             "stream": True,
         }
 
         if self.profile(source)["cookie"] and cookie:
             kwargs.update(self._cookie_passport(cookie))
+
+        headers = dict(kwargs.get("headers") or {})
+        headers.setdefault("User-Agent", random_user_agent())
+        kwargs["headers"] = headers
 
         return kwargs
 
@@ -191,12 +206,28 @@ class Fetcher:
             return 0, ""
 
         target = self._target_url(url, source)
+        status, body = 0, ""
 
+        for attempt in range(1, self.settings.block_retries + 1):
+            status, body = self._fetch_once(target, source)
+            self.last_status = status
+
+            if status not in BLOCK_CODES:
+                return status, body
+
+            if attempt < self.settings.block_retries:
+                logger.info(
+                    f"блок {status}, попытка {attempt}/{self.settings.block_retries} "
+                    f"— повторяем с новым отпечатком"
+                )
+                time.sleep(self.settings.block_retry_pause)
+
+        return status, body
+
+    def _fetch_once(self, target: str, source: str) -> tuple[int, str]:
         for attempt in range(1, self.settings.net_retries + 1):
             try:
-                status, body = self._get(target, source, self.cookie)
-                self.last_status = status
-                return status, body
+                return self._get(target, source, self.cookie)
             except Exception as err:
                 logger.warning(f"сетевая ошибка {attempt}/{self.settings.net_retries}: {str(err)[:120]}")
                 time.sleep(4)
