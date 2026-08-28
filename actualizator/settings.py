@@ -30,7 +30,7 @@ class Settings:
         self.api_token = os.getenv("PVZ_API_TOKEN", "")
         self.config_city = os.getenv("ACTUALIZER_CONFIG_CITY", "msk")
         self.cookie_slot = os.getenv("ACTUALIZER_COOKIE_SLOT", "act-msk")
-        self.batch_size = _int("ACTUALIZER_BATCH", 10)
+        self.batch_size = _int("ACTUALIZER_BATCH", 3)
         self.idle_sleep = _int("ACTUALIZER_IDLE_SLEEP", 300)
         self.disabled_sleep = _int("ACTUALIZER_DISABLED_SLEEP", 60)
         self.pause_min = _float("ACTUALIZER_PAUSE_MIN", 30.0)
