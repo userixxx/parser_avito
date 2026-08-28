@@ -1,5 +1,7 @@
+import json
 import random
 import time
+from pathlib import Path
 
 import requests
 from curl_cffi import requests as cffi
@@ -26,11 +28,11 @@ DEFAULT_PROFILE = {"cookie": False, "read_limit": 1_200_000}
 
 UNSAFE_COOKIE_HEADERS = ("host", "content-length", "connection", "accept-encoding")
 
-ACTION_BACKOFF = "backoff"
 ACTION_SWAP_COOKIE = "cookie"
 ACTION_ROTATE_IP = "rotate"
 ACTION_CHANGE_EQUIPMENT = "equipment"
-ACTION_HALT = "halt"
+COOKIE_BUDGET_FILE = "cookie_budget.json"
+DAY_SECONDS = 86400.0
 
 
 def known_impersonate(value: str | None) -> str | None:
@@ -82,6 +84,7 @@ class Fetcher:
         self.last_equipment_at = time.time()
         self.consecutive_net_errors = 0
         self.net_error_sources: set[str] = set()
+        self.cookie_budget_path = Path(settings.storage_dir) / COOKIE_BUDGET_FILE
 
     def apply_config(self, proxy_string: str | None, change_ip_url: str | None) -> None:
         self.proxy_string = proxy_string
@@ -99,11 +102,74 @@ class Fetcher:
             url = f"http://{url}"
         return {"http": url, "https": url}
 
+    def _cookie_budget(self, now: float) -> list[list]:
+        try:
+            saved = json.loads(self.cookie_budget_path.read_text())
+        except (OSError, ValueError):
+            return []
+
+        if not isinstance(saved, list):
+            return []
+
+        window = [row for row in saved if isinstance(row, list) and len(row) == 2 and now - row[0] < DAY_SECONDS]
+
+        return sorted(window, key=lambda row: row[0])
+
+    def _cookie_budget_wait(self) -> float:
+        now = time.time()
+        window = self._cookie_budget(now)
+        interval_left = 0.0
+
+        if window:
+            interval_left = max(0.0, self.settings.cookie_min_interval - (now - window[-1][0]))
+
+        if len(window) < self.settings.cookie_daily_cap:
+            return interval_left
+
+        return max(interval_left, window[0][0] + DAY_SECONDS - now)
+
+    def _cookie_budget_allows(self) -> bool:
+        wait = self._cookie_budget_wait()
+
+        if wait <= 0:
+            return True
+
+        window = self._cookie_budget(time.time())
+        logger.info(
+            f"бюджет кук {len(window)}/{self.settings.cookie_daily_cap} за сутки — "
+            f"следующая покупка через {wait / 60:.0f} мин"
+        )
+
+        return False
+
+    def _register_cookie(self, cookie_id) -> None:
+        if cookie_id is None:
+            return
+
+        now = time.time()
+        window = self._cookie_budget(now)
+
+        if any(row[1] == cookie_id for row in window):
+            return
+
+        window.append([now, cookie_id])
+
+        try:
+            self.cookie_budget_path.parent.mkdir(parents=True, exist_ok=True)
+            self.cookie_budget_path.write_text(json.dumps(window))
+        except OSError as err:
+            logger.warning(f"бюджет кук не сохранён: {str(err)[:120]}")
+
+        logger.info(f"бюджет кук: израсходовано {len(window)}/{self.settings.cookie_daily_cap} за сутки")
+
     def _lease_cookie(self, exclude_id: int | None = None, allow_purchase: bool = True) -> dict | None:
         leased = self.core.lease_cookie(self.cookie_slot, exclude_id, allow_purchase)
 
         if leased is None:
             return None
+
+        if allow_purchase:
+            self._register_cookie(leased.get("cookie_id"))
 
         logger.info(
             f"кука слота {self.cookie_slot}: id={leased.get('cookie_id')} "
@@ -121,7 +187,7 @@ class Fetcher:
 
     def _ensure_cookie(self) -> dict | None:
         if self.cookie is None:
-            self.cookie = self._lease_cookie()
+            self.cookie = self._lease_cookie(allow_purchase=self._cookie_budget_allows())
 
         return self.cookie
 
@@ -276,34 +342,18 @@ class Fetcher:
         self.escalation_pending = True
         self.batch_interrupted = True
 
-        action, _ = self._escalation_action()
-
         logger.warning(
             f"{self.settings.block_limit} блокировок подряд — пачка прервана, "
-            f"ступень {self.escalation_step} ({action}) выполнится после отчёта"
+            f"ступень {self.escalation_step} ({self._escalation_action()}) выполнится после отчёта"
         )
 
-    def _escalation_plan(self) -> list[tuple[str, float]]:
+    def _escalation_plan(self) -> list[str]:
         if self.settings.avito_mobile:
-            return [
-                (ACTION_ROTATE_IP, self.settings.mobile_rotate_pause),
-                (ACTION_SWAP_COOKIE, 0.0),
-                (ACTION_BACKOFF, self.settings.backoff_ladder[0]),
-                (ACTION_ROTATE_IP, self.settings.mobile_rotate_pause),
-                (ACTION_BACKOFF, self.settings.mobile_backoff_long),
-                (ACTION_HALT, self.settings.mobile_halt_sleep),
-            ]
+            return [ACTION_ROTATE_IP, ACTION_SWAP_COOKIE, ACTION_ROTATE_IP]
 
-        plan = [(ACTION_BACKOFF, pause) for pause in self.settings.backoff_ladder]
-        plan.append((ACTION_SWAP_COOKIE, 0.0))
-        plan.append((ACTION_ROTATE_IP, self.settings.rotate_pause))
-        plan.append((ACTION_ROTATE_IP, self.settings.rotate_pause))
-        plan.append((ACTION_CHANGE_EQUIPMENT, self.settings.equipment_pause))
-        plan.append((ACTION_HALT, self.settings.halt_sleep))
+        return [ACTION_SWAP_COOKIE, ACTION_ROTATE_IP, ACTION_ROTATE_IP, ACTION_CHANGE_EQUIPMENT]
 
-        return plan
-
-    def _escalation_action(self) -> tuple[str, float]:
+    def _escalation_action(self) -> str:
         plan = self._escalation_plan()
         index = min(max(self.escalation_step, 1), len(plan)) - 1
 
@@ -312,30 +362,21 @@ class Fetcher:
     def cooldown(self) -> None:
         if self.cookie_starved:
             self.cookie_starved = False
-            self._sleep_off(self.settings.no_cookie_sleep, "пул кук пуст — ждём пополнения")
+            self._wait_for_cookie_budget()
             return
 
         if not self.escalation_pending:
             return
 
         self.escalation_pending = False
-        action, pause = self._escalation_action()
+        action = self._escalation_action()
 
-        if action == ACTION_BACKOFF:
-            self._sleep_off(pause, "бэкофф: даём лимиту Авито остыть")
-            return
-
-        if action == ACTION_SWAP_COOKIE:
-            if self._swap_blocked_cookie():
-                self.escalation_step = 0
-                return
-            self._sleep_off(self.settings.backoff_ladder[0], "кука не виновата — идём дальше по лестнице")
+        if action == ACTION_SWAP_COOKIE and self._swap_blocked_cookie():
+            self.escalation_step = 0
             return
 
         if action == ACTION_ROTATE_IP:
             self.rotate_ip()
-            self._sleep_off(pause, "после смены IP выжидаем")
-            return
 
         if action == ACTION_CHANGE_EQUIPMENT:
             changed = self.core.change_equipment(
@@ -343,15 +384,19 @@ class Fetcher:
                 self.settings.equipment_city,
                 f"актуализатор: блокировка держится {self.escalation_step} ступеней подряд",
             )
-            self._sleep_off(pause, "оборудование сменено — выжидаем" if changed else "сменить оборудование не вышло — ждём")
+            logger.warning("оборудование сменено" if changed else "сменить оборудование не вышло")
+
+        if self.escalation_step >= len(self._escalation_plan()):
+            self.escalation_step = 0
+
+    def _wait_for_cookie_budget(self) -> None:
+        wait = self._cookie_budget_wait()
+
+        if wait <= 0:
             return
 
-        self._sleep_off(pause, "лестница пройдена целиком, блок не снят — уходим в долгий сон")
-        self.escalation_step = 0
-
-    def _sleep_off(self, seconds: float, reason: str) -> None:
-        logger.warning(f"{reason}: спим {seconds:.0f}с")
-        time.sleep(seconds)
+        logger.warning(f"куки нет, бюджет исчерпан — ждём окна покупки {wait / 60:.0f} мин")
+        time.sleep(wait)
 
     def _swap_blocked_cookie(self) -> bool:
         if self.last_blocked is None:
@@ -402,6 +447,9 @@ class Fetcher:
             )
             return False
 
+        if not self._cookie_budget_allows():
+            return False
+
         fresh = self.core.replace_cookie(
             self.cookie_slot,
             worn_ids,
@@ -410,6 +458,8 @@ class Fetcher:
 
         if fresh is None:
             return False
+
+        self._register_cookie(fresh.get("cookie_id"))
 
         logger.warning(
             f"куплена свежая кука {fresh.get('cookie_id')} взамен {worn_ids} — "
@@ -463,6 +513,9 @@ class Fetcher:
             self.last_repair_at = time.time()
 
     def _repair_cookie(self, now: float, idle: float) -> bool:
+        if not self._cookie_budget_allows():
+            return False
+
         worn = [self.cookie["cookie_id"]] if self.cookie else []
         fresh = self.core.replace_cookie(
             self.cookie_slot,
@@ -472,6 +525,8 @@ class Fetcher:
 
         if fresh is None:
             return False
+
+        self._register_cookie(fresh.get("cookie_id"))
 
         logger.warning(f"ремонт: куплена свежая кука {fresh.get('cookie_id')} взамен {worn} — меняем и IP")
         self.cookie = fresh
@@ -487,10 +542,11 @@ class Fetcher:
         self.consecutive_net_errors = 0
         self.net_error_sources.clear()
 
-        if not self._change_equipment_direct(blacklist):
-            self.core.change_equipment("actualizer", self.settings.equipment_city, f"актуализатор: {reason}")
+        changed = self._change_equipment_direct(blacklist) or self.core.change_equipment(
+            "actualizer", self.settings.equipment_city, f"актуализатор: {reason}"
+        )
 
-        self._sleep_off(self.settings.equipment_pause, "оборудование сменено — выжидаем")
+        logger.warning("ремонт: оборудование сменено" if changed else "ремонт: сменить оборудование не вышло")
         self.last_repair_at = time.time()
 
     def _proxy_identity(self) -> tuple[int, int] | None:

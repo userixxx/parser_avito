@@ -24,21 +24,6 @@ def _bool(name: str, default: bool) -> bool:
     return value.strip().lower() in ("1", "true", "yes", "on")
 
 
-def _floats(name: str, default: str) -> list[float]:
-    values = []
-
-    for chunk in os.getenv(name, default).split(","):
-        chunk = chunk.strip()
-        if not chunk:
-            continue
-        try:
-            values.append(float(chunk))
-        except ValueError:
-            continue
-
-    return values or [float(part) for part in default.split(",")]
-
-
 class Settings:
     def __init__(self) -> None:
         self.core_api_url = os.getenv("CORE_API_URL", "http://core_web:8080")
@@ -56,18 +41,12 @@ class Settings:
         self.net_retries = _int("ACTUALIZER_NET_RETRIES", 3)
         self.block_retries = _int("ACTUALIZER_BLOCK_RETRIES", 5)
         self.block_retry_pause = _float("ACTUALIZER_BLOCK_RETRY_PAUSE", 5.0)
-        self.backoff_ladder = _floats("ACTUALIZER_BACKOFF_LADDER", "60,180,600,1800")
-        self.rotate_pause = _float("ACTUALIZER_ROTATE_PAUSE", 120.0)
-        self.equipment_pause = _float("ACTUALIZER_EQUIPMENT_PAUSE", 300.0)
-        self.halt_sleep = _float("ACTUALIZER_HALT_SLEEP", 3600.0)
-        self.no_cookie_sleep = _float("ACTUALIZER_NO_COOKIE_SLEEP", 600.0)
+        self.cookie_daily_cap = _int("ACTUALIZER_COOKIE_DAILY_CAP", 30)
+        self.cookie_min_interval = _float("ACTUALIZER_COOKIE_MIN_INTERVAL", 2880.0)
         self.equipment_city = os.getenv("ACTUALIZER_EQUIPMENT_CITY", "global")
         self.avito_mobile = _bool("ACTUALIZER_AVITO_MOBILE", False)
         self.avito_mobile_host = os.getenv("ACTUALIZER_AVITO_MOBILE_HOST", "m.avito.ru")
-        self.mobile_rotate_pause = _float("ACTUALIZER_MOBILE_ROTATE_PAUSE", 20.0)
         self.mobile_rotate_cooldown = _int("ACTUALIZER_MOBILE_ROTATE_COOLDOWN", 300)
-        self.mobile_backoff_long = _float("ACTUALIZER_MOBILE_BACKOFF_LONG", 300.0)
-        self.mobile_halt_sleep = _float("ACTUALIZER_MOBILE_HALT_SLEEP", 900.0)
         self.cookie_stale_seconds = _float("ACTUALIZER_COOKIE_STALE_MINUTES", 15.0) * 60
         self.cookie_purchase_timeout = _float("ACTUALIZER_COOKIE_PURCHASE_TIMEOUT", 150.0)
         self.repair_idle_seconds = _float("ACTUALIZER_REPAIR_IDLE_MINUTES", 10.0) * 60
