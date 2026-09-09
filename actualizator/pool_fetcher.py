@@ -2,11 +2,17 @@ from loguru import logger
 
 from actualizator.fetcher import Fetcher
 
+POOL_BLOCK_RETRIES = 1
+POOL_NET_RETRIES = 1
+POOL_REQUEST_TIMEOUT_CAP = 30.0
+
 
 class PoolFetcher(Fetcher):
     def __init__(self, settings, core, cookie_slot: str):
         super().__init__(settings, core, cookie_slot)
-        self.settings.block_retries = 1
+        self.settings.block_retries = POOL_BLOCK_RETRIES
+        self.settings.net_retries = POOL_NET_RETRIES
+        self.settings.request_timeout = min(self.settings.request_timeout, POOL_REQUEST_TIMEOUT_CAP)
 
     def _escalation_plan(self) -> list[str]:
         return []
@@ -18,6 +24,11 @@ class PoolFetcher(Fetcher):
         self.consecutive_blocks = 0
         self.batch_interrupted = True
         self.cookie = None
+
+        logger.warning(
+            f"{self.settings.block_limit} блокировок подряд — кука слота {self.cookie_slot} сброшена, "
+            f"следующий цикл возьмёт другую"
+        )
 
     def cooldown(self) -> None:
         self.cookie_starved = False

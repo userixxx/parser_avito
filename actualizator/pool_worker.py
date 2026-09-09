@@ -17,6 +17,11 @@ class PoolCycle:
 
         proxy_id = self.proxy.proxy_id
 
+        if not self.proxy.proxy_url:
+            self.proxy.release()
+            logger.warning("пул отдал канал без адреса — запрос без прокси не делаем")
+            return "busy"
+
         try:
             self.fetcher.apply_config(self.proxy.proxy_url, None)
             tasks = self.core.lease(1, source="avito")

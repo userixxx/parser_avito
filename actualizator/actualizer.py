@@ -22,6 +22,10 @@ def build_logger(storage_dir: str) -> None:
     logger.add(str(log_path), rotation="20 MB", retention=5, level="INFO", enqueue=True)
 
 
+POOL_CORE_TIMEOUT = 10.0
+POOL_CORE_PURCHASE_TIMEOUT = 15.0
+
+
 class SyncProxyClient:
     def __init__(self, client):
         self._client = client
@@ -68,8 +72,20 @@ def run() -> int:
             token=settings.api_token,
             kind="scrape",
         )
+        pool_core = CoreClient(
+            settings.core_api_url,
+            settings.api_token,
+            timeout=POOL_CORE_TIMEOUT,
+            purchase_timeout=POOL_CORE_PURCHASE_TIMEOUT,
+        )
         proxy = SyncProxyClient(ProxyClient(None, low_priority=True))
-        return run_pool(settings, core, PoolFetcher(settings, core, settings.cookie_slot), proxy, pool_heartbeat)
+        return run_pool(
+            settings,
+            pool_core,
+            PoolFetcher(settings, pool_core, settings.cookie_slot),
+            proxy,
+            pool_heartbeat,
+        )
 
     heartbeat = Heartbeat(
         source="actualizer",
