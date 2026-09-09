@@ -57,6 +57,8 @@ class Settings:
         self.dead_equipment_seconds = _float("ACTUALIZER_DEAD_EQUIPMENT_MINUTES", 15.0) * 60
         self.mobileproxy_token = os.getenv("MOBILEPROXY_API_TOKEN", "")
         self.storage_dir = os.getenv("ACTUALIZER_STORAGE", "storage")
+        self.mode = os.getenv("ACTUALIZER_MODE", "main").strip().lower()
+        self.busy_sleep = _float("ACTUALIZER_BUSY_SLEEP", 15.0)
 
     @property
     def configured(self) -> bool:

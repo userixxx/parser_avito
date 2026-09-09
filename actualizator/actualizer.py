@@ -22,6 +22,25 @@ def build_logger(storage_dir: str) -> None:
     logger.add(str(log_path), rotation="20 MB", retention=5, level="INFO", enqueue=True)
 
 
+class SyncProxyClient:
+    def __init__(self, client):
+        self._client = client
+
+    @property
+    def proxy_url(self):
+        return self._client.proxy_url
+
+    @property
+    def proxy_id(self):
+        return self._client.proxy_id
+
+    def acquire(self) -> bool:
+        return asyncio.run(self._client.acquire())
+
+    def release(self) -> None:
+        asyncio.run(self._client.release())
+
+
 def run() -> int:
     settings = Settings()
     build_logger(settings.storage_dir)
@@ -37,6 +56,21 @@ def run() -> int:
         api_url=settings.core_api_url,
         token=settings.api_token,
     )
+    if settings.mode == "pool":
+        from actualizator.pool_fetcher import PoolFetcher
+        from actualizator.pool_worker import run_pool
+        from pvz_common.proxy_client import ProxyClient
+
+        pool_heartbeat = Heartbeat(
+            source="actualizer_pool",
+            city="pool",
+            api_url=settings.core_api_url,
+            token=settings.api_token,
+            kind="scrape",
+        )
+        proxy = SyncProxyClient(ProxyClient(None, low_priority=True))
+        return run_pool(settings, core, PoolFetcher(settings, core, settings.cookie_slot), proxy, pool_heartbeat)
+
     heartbeat = Heartbeat(
         source="actualizer",
         city="global",

@@ -9,12 +9,17 @@ class CoreClient:
         self.purchase_timeout = purchase_timeout
         self.headers = {"X-Api-Key": token, "Content-Type": "application/json"}
 
-    def lease(self, limit: int) -> list[dict]:
+    def lease(self, limit: int, source: str | None = None) -> list[dict]:
+        params = {"limit": limit}
+
+        if source:
+            params["source"] = source
+
         try:
             res = requests.get(
                 f"{self.api_url}/api/internal/actualization/lease",
                 headers=self.headers,
-                params={"limit": limit},
+                params=params,
                 timeout=self.timeout,
             )
         except requests.RequestException as err:
@@ -81,7 +86,7 @@ class CoreClient:
         logger.warning(f"core отказал в смене оборудования: {payload.get('error', '?')}")
         return False
 
-    def lease_cookie(self, city: str, exclude_id: int | None = None, allow_purchase: bool = True) -> dict | None:
+    def lease_cookie(self, city: str, exclude_id: int | None = None, allow_purchase: bool = True, prefer_idle: bool = False) -> dict | None:
         params = {"city": city}
 
         if exclude_id:
@@ -89,6 +94,9 @@ class CoreClient:
 
         if not allow_purchase:
             params["buy"] = 0
+
+        if prefer_idle:
+            params["prefer_idle"] = 1
 
         try:
             res = requests.get(
