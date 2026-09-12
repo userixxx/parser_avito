@@ -116,6 +116,9 @@ class Fetcher:
         return sorted(window, key=lambda row: row[0])
 
     def _cookie_budget_wait(self) -> float:
+        if not self.settings.cookie_buy:
+            return self.settings.cookie_wait_seconds
+
         now = time.time()
         window = self._cookie_budget(now)
         interval_left = 0.0
@@ -129,6 +132,9 @@ class Fetcher:
         return max(interval_left, window[0][0] + DAY_SECONDS - now)
 
     def _cookie_budget_allows(self) -> bool:
+        if not self.settings.cookie_buy:
+            return False
+
         wait = self._cookie_budget_wait()
 
         if wait <= 0:
@@ -395,7 +401,11 @@ class Fetcher:
         if wait <= 0:
             return
 
-        logger.warning(f"куки нет, бюджет исчерпан — ждём окна покупки {wait / 60:.0f} мин")
+        if not self.settings.cookie_buy:
+            logger.info(f"куки нет, покупка выключена — ждём куку основного потока {wait:.0f} с")
+        else:
+            logger.warning(f"куки нет, бюджет исчерпан — ждём окна покупки {wait / 60:.0f} мин")
+
         time.sleep(wait)
 
     def _swap_blocked_cookie(self) -> bool:

@@ -30,6 +30,12 @@ class Settings:
         self.api_token = os.getenv("PVZ_API_TOKEN", "")
         self.config_city = os.getenv("ACTUALIZER_CONFIG_CITY", "msk")
         self.cookie_slot = os.getenv("ACTUALIZER_COOKIE_SLOT", "act-msk")
+        self.heartbeat_city = os.getenv("ACTUALIZER_HEARTBEAT_CITY", "global")
+        self.only_sources = [
+            item.strip()
+            for item in os.getenv("ACTUALIZER_ONLY_SOURCES", "").split(",")
+            if item.strip()
+        ]
         self.batch_size = _int("ACTUALIZER_BATCH", 3)
         self.idle_sleep = _int("ACTUALIZER_IDLE_SLEEP", 300)
         self.disabled_sleep = _int("ACTUALIZER_DISABLED_SLEEP", 60)
@@ -41,6 +47,8 @@ class Settings:
         self.net_retries = _int("ACTUALIZER_NET_RETRIES", 3)
         self.block_retries = _int("ACTUALIZER_BLOCK_RETRIES", 5)
         self.block_retry_pause = _float("ACTUALIZER_BLOCK_RETRY_PAUSE", 5.0)
+        self.cookie_buy = _bool("ACTUALIZER_COOKIE_BUY", True)
+        self.cookie_wait_seconds = _float("ACTUALIZER_COOKIE_WAIT_SECONDS", 60.0)
         self.cookie_daily_cap = _int("ACTUALIZER_COOKIE_DAILY_CAP", 30)
         self.cookie_min_interval = _float("ACTUALIZER_COOKIE_MIN_INTERVAL", 2880.0)
         self.equipment_city = os.getenv("ACTUALIZER_EQUIPMENT_CITY", "global")

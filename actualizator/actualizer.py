@@ -89,14 +89,17 @@ def run() -> int:
 
     heartbeat = Heartbeat(
         source="actualizer",
-        city="global",
+        city=settings.heartbeat_city,
         api_url=settings.core_api_url,
         token=settings.api_token,
         kind="scrape",
     )
     fetcher = Fetcher(settings, core, settings.cookie_slot)
 
-    logger.info(f"актуализатор запущен | город конфига={settings.config_city} слот={settings.cookie_slot}")
+    logger.info(
+        f"актуализатор запущен | город конфига={settings.config_city} слот={settings.cookie_slot} "
+        f"источники={','.join(settings.only_sources) or 'все'} покупка кук={'да' if settings.cookie_buy else 'нет'}"
+    )
 
     while True:
         try:
@@ -119,7 +122,7 @@ def run() -> int:
             time.sleep(settings.disabled_sleep)
             continue
 
-        tasks = core.lease(settings.batch_size)
+        tasks = core.lease(settings.batch_size, ",".join(settings.only_sources) or None)
 
         if not tasks:
             logger.info("очередь пуста — спим")
