@@ -399,6 +399,12 @@ class Fetcher:
         wait = self._cookie_budget_wait()
 
         if wait <= 0:
+            logger.warning(
+                f"пул кук слота {self.cookie_slot} пуст, хотя бюджет свободен — "
+                f"ждём {self.settings.cookie_wait_seconds:.0f} с, "
+                f"иначе цикл сожжёт попытки задач впустую"
+            )
+            time.sleep(self.settings.cookie_wait_seconds)
             return
 
         if not self.settings.cookie_buy:

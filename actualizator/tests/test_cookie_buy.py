@@ -65,6 +65,33 @@ def test_purchase_enabled_keeps_previous_behaviour(tmp_path):
     assert core.lease_calls == [True]
 
 
+def test_starved_slot_backs_off_instead_of_spinning(tmp_path, monkeypatch):
+    fetcher, _ = build(tmp_path, buy=True)
+    fetcher.cookie_starved = True
+
+    slept = []
+    monkeypatch.setattr("actualizator.fetcher.time.sleep", lambda s: slept.append(s))
+
+    assert fetcher._cookie_budget_wait() == 0.0
+    fetcher.cooldown()
+
+    assert slept == [60.0]
+
+
+def test_exhausted_budget_still_waits_its_own_window(tmp_path, monkeypatch):
+    fetcher, _ = build(tmp_path, buy=True)
+    fetcher.settings.cookie_daily_cap = 1
+    fetcher._register_cookie(1)
+    fetcher.cookie_starved = True
+
+    slept = []
+    monkeypatch.setattr("actualizator.fetcher.time.sleep", lambda s: slept.append(s))
+
+    fetcher.cooldown()
+
+    assert len(slept) == 1 and slept[0] > 60.0
+
+
 def test_only_sources_parsed_from_env(monkeypatch):
     monkeypatch.setenv("ACTUALIZER_ONLY_SOURCES", "avito, cian ")
 
